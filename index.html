@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>파트너스 매칭 매니저</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Pretendard"', '"Apple SD Gothic Neo"', '"Malgun Gothic"', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    .tab-active {
+      background-color: #4f46e5;
+      color: white;
+    }
+    .tab-inactive {
+      background-color: #f3f4f6;
+      color: #6b7280;
+    }
+    .tab-inactive:hover {
+      background-color: #e5e7eb;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+  <!-- 헤더 -->
+  <header class="bg-white border-b border-gray-200 sticky top-0 z-10">
+    <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div>
+        <h1 class="text-xl font-bold text-gray-800">🤝 파트너스 매칭 매니저</h1>
+        <p class="text-xs text-gray-400 mt-0.5">프리랜서 정리수납 파트너 배정 시스템</p>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span class="text-xs text-gray-400">Supabase 연결</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 탭 네비게이션 -->
+  <nav class="max-w-5xl mx-auto px-4 pt-6">
+    <div class="flex gap-2">
+      <button data-tab="partners"
+        class="tab-active px-5 py-2.5 rounded-xl text-sm font-semibold transition-all">
+        👤 파트너 관리
+      </button>
+      <button data-tab="assignments"
+        class="tab-inactive px-5 py-2.5 rounded-xl text-sm font-semibold transition-all">
+        📋 배정 현황
+      </button>
+    </div>
+  </nav>
+
+  <!-- ═══ 파트너 관리 패널 ═══ -->
+  <main id="panel-partners" class="max-w-5xl mx-auto px-4 py-6">
+
+    <!-- 파트너 등록 폼 -->
+    <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+      <h2 class="text-base font-bold text-gray-700 mb-4">새 파트너 등록</h2>
+      <form id="form-partner" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">이름 *</label>
+          <input type="text" name="name" required minlength="2" maxlength="50"
+            class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm
+                   focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition"
+            placeholder="홍길동" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">전화번호 *</label>
+          <input type="tel" name="phone" required
+            class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm
+                   focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition"
+            placeholder="010-1234-5678" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">활동 지역 *</label>
+          <input type="text" name="region" required minlength="2"
+            class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm
+                   focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition"
+            placeholder="서울 강서구" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">전문 분야</label>
+          <input type="text" name="specialty"
+            class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm
+                   focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition"
+            placeholder="정리수납" value="정리수납" />
+        </div>
+
+        <div class="sm:col-span-2">
+          <button type="submit"
+            class="w-full sm:w-auto px-6 py-2.5 bg-indigo-600 text-white text-sm font-semibold
+                   rounded-xl hover:bg-indigo-700 active:scale-[0.98] transition-all">
+            ➕ 파트너 등록
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- 파트너 목록 -->
+    <section>
+      <h2 class="text-base font-bold text-gray-700 mb-4">등록된 파트너</h2>
+      <div id="partner-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="text-center py-12 text-gray-400">
+          <p class="text-lg">로딩 중...</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ═══ 배정 현황 패널 ═══ -->
+  <main id="panel-assignments" class="max-w-5xl mx-auto px-4 py-6 hidden">
+
+    <!-- 배정 등록 폼 -->
+    <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+      <h2 class="text-base font-bold text-gray-700 mb-4">새 배정 등록</h2>
+      <form id="form-assignment" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">담당 파트너 *</label>
+          <select id="assign-partner" name="partner" required
+            class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm
+                   focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition">
+            <option value="">파트너 선택</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">고객명 *</label>
+          <input type="text" name="client_name" required minlength="2"
+            class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm
+                   focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition"
+            placeholder="고객 이름" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">현장 주소 *</label>
+          <input type="text" name="client_address" required
+            class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm
+                   focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition"
+            placeholder="서울시 강서구 ..." />
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">배정 날짜 *</label>
+          <input type="date" name="assignment_date" required
+            class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm
+                   focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition" />
+        </div>
+
+        <div class="sm:col-span-2">
+          <label class="block text-xs font-medium text-gray-500 mb-1">메모</label>
+          <textarea name="notes" rows="2"
+            class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm
+                   focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition resize-none"
+            placeholder="추가 메모 (선택)"></textarea>
+        </div>
+
+        <div class="sm:col-span-2">
+          <button type="submit"
+            class="w-full sm:w-auto px-6 py-2.5 bg-indigo-600 text-white text-sm font-semibold
+                   rounded-xl hover:bg-indigo-700 active:scale-[0.98] transition-all">
+            📋 배정 등록
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- 필터 + 배정 목록 -->
+    <section>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-base font-bold text-gray-700">배정 현황판</h2>
+        <select id="filter-status" onchange="filterAssignments()"
+          class="px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600
+                 focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none">
+          <option value="all">전체</option>
+          <option value="대기">🟡 대기</option>
+          <option value="완료">🔵 완료</option>
+          <option value="종료">⚪ 종료</option>
+        </select>
+      </div>
+      <div id="assignment-list" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="text-center py-12 text-gray-400">
+          <p class="text-lg">로딩 중...</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 토스트 컨테이너 -->
+  <div id="toast-container" class="fixed bottom-6 right-6 flex flex-col gap-2 z-50"></div>
+
+  <!-- 앱 진입점 -->
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

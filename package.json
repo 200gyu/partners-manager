@@ -1,0 +1,17 @@
+{
+  "name": "partners-manager",
+  "version": "1.0.0",
+  "description": "프리랜서 정리수납 파트너 매칭/배정 로그 시스템",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^6.3.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.0"
+  }
+}

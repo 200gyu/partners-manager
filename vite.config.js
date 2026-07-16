@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   root: '.',
-  base: '/partners-manager/',
+  base: process.env.BASE_PATH || '/',
   build: {
     outDir: 'dist',
   },

@@ -5,3 +5,6 @@ dist/
 .env.*.local
 
 .vercel
+
+# 개인정보가 포함된 시드 데이터 (Supabase Dashboard에서 직접 실행)
+supabase-seed-partners.sql

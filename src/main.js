@@ -8,6 +8,9 @@ let currentTab = 'partners';
 let assignmentView = 'list';
 let calYear = new Date().getFullYear();
 let calMonth = new Date().getMonth();
+let dayOffs = [];
+let dayoffCalYear = new Date().getFullYear();
+let dayoffCalMonth = new Date().getMonth();
 
 // ─── 초기화 ───
 document.addEventListener('DOMContentLoaded', async () => {
@@ -116,8 +119,10 @@ function showApp(session) {
   document.getElementById('user-email').textContent = session.user.email;
   setupTabs();
   setupForms();
+  setupDayOffForm();
   loadPartners();
   loadAssignments();
+  loadDayOffs();
   setupPartnerSearch();
 }
 
@@ -154,6 +159,21 @@ function setupForms() {
   assignmentForm.removeEventListener('submit', handleAddAssignment);
   partnerForm.addEventListener('submit', handleAddPartner);
   assignmentForm.addEventListener('submit', handleAddAssignment);
+}
+
+function setupDayOffForm() {
+  const form = document.getElementById('form-dayoff');
+  if (!form) return;
+  form.addEventListener('submit', handleAddDayOff);
+
+  const startInput = document.getElementById('dayoff-start');
+  startInput.addEventListener('change', () => {
+    const endInput = document.getElementById('dayoff-end');
+    if (!endInput.value || endInput.value < startInput.value) {
+      endInput.value = startInput.value;
+    }
+    endInput.min = startInput.value;
+  });
 }
 
 // ─── 파트너 검색 ───
@@ -201,6 +221,7 @@ async function loadPartners() {
   partners = data || [];
   renderPartners();
   populateTeamSelect();
+  populateDayOffSelect();
   updateDashboard();
 }
 
@@ -478,6 +499,14 @@ async function handleAddAssignment(e) {
     return;
   }
 
+  const allTeamIds = [leader_id, ...member_ids];
+  const conflicting = getConflictingPartners(allTeamIds, assignment_date);
+  if (conflicting.length > 0) {
+    const names = conflicting.map(c => c.name).join(', ');
+    showToast(`휴무일 충돌: ${names}님이 ${assignment_date}에 휴무입니다`, 'error');
+    return;
+  }
+
   const { error } = await supabase
     .from('assignments')
     .insert([{ leader_id, member_ids, client_name, client_address, assignment_date, notes }]);
@@ -724,6 +753,189 @@ document.addEventListener('keydown', (e) => {
     }
   }
 });
+
+// ═══════════════════════════════════════
+//  휴무일 관리
+// ═══════════════════════════════════════
+
+function populateDayOffSelect() {
+  const select = document.getElementById('dayoff-partner');
+  if (!select) return;
+  const activePartners = partners.filter(p => p.is_active);
+  select.innerHTML =
+    '<option value="">파트너 선택</option>' +
+    activePartners
+      .map(p => `<option value="${p.id}">${esc(p.name)}${p.region ? ' (' + esc(p.region) + ')' : ''}</option>`)
+      .join('');
+}
+
+async function loadDayOffs() {
+  const { data, error } = await supabase
+    .from('partner_day_offs')
+    .select('*')
+    .order('start_date', { ascending: true });
+
+  if (error) {
+    showToast('휴무일 로딩 실패: ' + error.message, 'error');
+    return;
+  }
+  dayOffs = data || [];
+  renderDayOffCalendar();
+}
+
+async function handleAddDayOff(e) {
+  e.preventDefault();
+  const partnerId = document.getElementById('dayoff-partner').value;
+  const startDate = document.getElementById('dayoff-start').value;
+  const endDate = document.getElementById('dayoff-end').value;
+  const reason = document.getElementById('dayoff-reason').value.trim();
+
+  if (!partnerId) {
+    showToast('파트너를 선택하세요', 'error');
+    return;
+  }
+  if (endDate < startDate) {
+    showToast('종료일은 시작일 이후여야 합니다', 'error');
+    return;
+  }
+
+  const { error } = await supabase
+    .from('partner_day_offs')
+    .insert([{ partner_id: partnerId, start_date: startDate, end_date: endDate, reason }]);
+
+  if (error) {
+    showToast('휴무일 등록 실패: ' + error.message, 'error');
+    return;
+  }
+
+  const partner = partners.find(p => p.id === partnerId);
+  showToast(`${partner ? partner.name : ''} 휴무일이 등록되었습니다 (${startDate} ~ ${endDate})`);
+  document.getElementById('form-dayoff').reset();
+  await loadDayOffs();
+}
+
+function getConflictingPartners(partnerIds, dateStr) {
+  const results = [];
+  for (const pid of partnerIds) {
+    const isOff = dayOffs.some(d =>
+      d.partner_id === pid && dateStr >= d.start_date && dateStr <= d.end_date
+    );
+    if (isOff) {
+      const partner = partners.find(p => p.id === pid);
+      if (partner) results.push(partner);
+    }
+  }
+  return results;
+}
+
+window.dayoffCalPrev = function () {
+  dayoffCalMonth--;
+  if (dayoffCalMonth < 0) { dayoffCalMonth = 11; dayoffCalYear--; }
+  renderDayOffCalendar();
+};
+
+window.dayoffCalNext = function () {
+  dayoffCalMonth++;
+  if (dayoffCalMonth > 11) { dayoffCalMonth = 0; dayoffCalYear++; }
+  renderDayOffCalendar();
+};
+
+window.dayoffCalToday = function () {
+  const now = new Date();
+  dayoffCalYear = now.getFullYear();
+  dayoffCalMonth = now.getMonth();
+  renderDayOffCalendar();
+};
+
+window.deleteDayOff = async function (id) {
+  if (!confirm('이 휴무일을 삭제하시겠습니까?')) return;
+  const { error } = await supabase
+    .from('partner_day_offs')
+    .delete()
+    .eq('id', id);
+  if (error) {
+    showToast('삭제 실패: ' + error.message, 'error');
+    return;
+  }
+  showToast('휴무일이 삭제되었습니다');
+  await loadDayOffs();
+};
+
+function renderDayOffCalendar() {
+  const titleEl = document.getElementById('dayoff-cal-title');
+  const gridEl = document.getElementById('dayoff-cal-grid');
+  if (!titleEl || !gridEl) return;
+
+  titleEl.textContent = `${dayoffCalYear}년 ${dayoffCalMonth + 1}월`;
+
+  const byDate = {};
+  dayOffs.forEach(d => {
+    const start = new Date(d.start_date + 'T00:00:00');
+    const end = new Date(d.end_date + 'T00:00:00');
+    for (let cur = new Date(start); cur <= end; cur.setDate(cur.getDate() + 1)) {
+      const dateStr = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
+      if (!byDate[dateStr]) byDate[dateStr] = [];
+      byDate[dateStr].push(d);
+    }
+  });
+
+  const firstDay = new Date(dayoffCalYear, dayoffCalMonth, 1).getDay();
+  const daysInMonth = new Date(dayoffCalYear, dayoffCalMonth + 1, 0).getDate();
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+  const totalCells = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+  let html = '';
+
+  for (let i = 0; i < totalCells; i++) {
+    const dayNum = i - firstDay + 1;
+    const isCurrentMonth = dayNum >= 1 && dayNum <= daysInMonth;
+    const dateStr = isCurrentMonth
+      ? `${dayoffCalYear}-${String(dayoffCalMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
+      : '';
+    const isToday = dateStr === todayStr;
+    const dayOfWeek = i % 7;
+    const isSunday = dayOfWeek === 0;
+    const isSaturday = dayOfWeek === 6;
+
+    const entries = isCurrentMonth && byDate[dateStr] ? byDate[dateStr] : [];
+    const hasDayOff = entries.length > 0;
+    const cellBg = isCurrentMonth ? (isToday ? 'bg-brand-50' : hasDayOff ? 'bg-rose-50' : 'bg-white') : 'bg-gray-50';
+
+    html += `<div class="cal-cell ${cellBg} p-1 flex flex-col">`;
+
+    if (isCurrentMonth) {
+      const dayColor = isSunday ? 'text-red-500' : isSaturday ? 'text-blue-500' : 'text-gray-700';
+      const todayRing = isToday ? 'bg-brand-700 text-white rounded-full w-6 h-6 flex items-center justify-center' : '';
+      html += `<div class="text-xs font-semibold ${dayColor} mb-0.5 flex items-center justify-between">`;
+      html += todayRing
+        ? `<span class="${todayRing}">${dayNum}</span>`
+        : `<span>${dayNum}</span>`;
+      if (entries.length > 0) {
+        html += `<span class="text-[9px] font-normal text-rose-400">${entries.length}명</span>`;
+      }
+      html += `</div>`;
+
+      html += `<div class="flex-1 overflow-y-auto space-y-px" style="max-height:90px;">`;
+      const seen = new Set();
+      entries.forEach(d => {
+        if (seen.has(d.id)) return;
+        seen.add(d.id);
+        const partner = partners.find(p => p.id === d.partner_id);
+        const name = partner ? partner.name : '?';
+        const tooltip = d.reason
+          ? `${name} 휴무 (${d.start_date} ~ ${d.end_date}) — ${d.reason}`
+          : `${name} 휴무 (${d.start_date} ~ ${d.end_date})`;
+        html += `<div class="dayoff-entry cursor-pointer" title="${esc(tooltip)}" onclick="deleteDayOff('${d.id}')">${esc(name)}</div>`;
+      });
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+  }
+
+  gridEl.innerHTML = html;
+}
 
 // ═══════════════════════════════════════
 //  유틸리티

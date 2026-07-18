@@ -166,6 +166,11 @@ function setupForms() {
   assignmentForm.removeEventListener('submit', handleAddAssignment);
   partnerForm.addEventListener('submit', handleAddPartner);
   assignmentForm.addEventListener('submit', handleAddAssignment);
+
+  const phoneInput = partnerForm.querySelector('input[name="phone"]');
+  phoneInput.addEventListener('input', () => {
+    phoneInput.value = formatPhoneNumber(phoneInput.value);
+  });
 }
 
 function setupDayOffForm() {
@@ -252,7 +257,7 @@ function renderPartners(searchQuery = '') {
   container.innerHTML = filtered
     .map(
       (p) => `
-    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow" data-partner-id="${p.id}">
       <div class="flex items-start justify-between">
         <div class="flex-1 min-w-0">
           <h3 class="text-lg font-semibold text-gray-800">${esc(p.name)}</h3>
@@ -269,6 +274,10 @@ function renderPartners(searchQuery = '') {
         </span>
       </div>
       <div class="mt-3 pt-3 border-t border-gray-50 flex gap-2">
+        <button onclick="editPartner('${p.id}')"
+          class="text-xs px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors">
+          수정
+        </button>
         <button onclick="togglePartnerActive('${p.id}', ${!p.is_active})"
           class="text-xs px-3 py-1.5 rounded-lg ${
             p.is_active
@@ -344,6 +353,74 @@ window.deletePartner = async function (id, name) {
   showToast(`${name} 파트너가 삭제되었습니다`);
   await loadPartners();
   await loadAssignments();
+};
+
+window.editPartner = function (id) {
+  const p = partners.find(x => x.id === id);
+  if (!p) return;
+  const card = document.querySelector(`#partner-list [data-partner-id="${id}"]`);
+  if (!card) return;
+
+  card.innerHTML = `
+    <div class="space-y-3">
+      <h3 class="text-lg font-semibold text-gray-800">${esc(p.name)}</h3>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">전화번호</label>
+        <input type="tel" id="edit-phone-${id}" value="${p.phone || ''}"
+          class="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm
+                 focus:ring-2 focus:ring-brand-200 focus:border-brand-500 outline-none transition"
+          placeholder="010-1234-5678" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">활동 지역</label>
+        <input type="text" id="edit-region-${id}" value="${p.region || ''}"
+          class="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm
+                 focus:ring-2 focus:ring-brand-200 focus:border-brand-500 outline-none transition"
+          placeholder="제주시" />
+      </div>
+      <div class="flex gap-2">
+        <button onclick="savePartnerEdit('${id}')"
+          class="text-xs px-4 py-2 bg-brand-700 text-white rounded-xl hover:bg-brand-800 transition-all font-semibold">
+          저장
+        </button>
+        <button onclick="cancelPartnerEdit()"
+          class="text-xs px-4 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-colors">
+          취소
+        </button>
+      </div>
+    </div>`;
+
+  const editPhone = document.getElementById(`edit-phone-${id}`);
+  editPhone.addEventListener('input', () => {
+    editPhone.value = formatPhoneNumber(editPhone.value);
+  });
+};
+
+window.savePartnerEdit = async function (id) {
+  const phone = document.getElementById(`edit-phone-${id}`).value.trim();
+  const region = document.getElementById(`edit-region-${id}`).value.trim();
+
+  if (phone && !validatePhone(phone)) {
+    showToast('전화번호 형식이 올바르지 않습니다 (예: 010-1234-5678)', 'error');
+    return;
+  }
+
+  const { error } = await supabase
+    .from('partners')
+    .update({ phone: phone || '', region: region || '' })
+    .eq('id', id);
+
+  if (error) {
+    showToast('수정 실패: ' + error.message, 'error');
+    return;
+  }
+
+  showToast('파트너 정보가 수정되었습니다');
+  await loadPartners();
+};
+
+window.cancelPartnerEdit = function () {
+  renderPartners();
 };
 
 // ═══════════════════════════════════════
@@ -964,6 +1041,13 @@ function validatePhone(phone) {
   return /^\d{2,3}-\d{3,4}-\d{4}$/.test(phone);
 }
 
+function formatPhoneNumber(value) {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 7) return digits.slice(0, 3) + '-' + digits.slice(3);
+  return digits.slice(0, 3) + '-' + digits.slice(3, 7) + '-' + digits.slice(7, 11);
+}
+
 function esc(str) {
   const div = document.createElement('div');
   div.textContent = str;
@@ -1107,6 +1191,7 @@ function renderPayrollAssignments(filtered) {
       const existing = existingRecords.find(r => r.partner_id === id);
       const rate = existing ? existing.hourly_rate : '';
       const hours = existing ? existing.hours_worked : '';
+      const bonus = existing ? (existing.bonus || 0) : '';
       const total = existing ? existing.total_amount : 0;
 
       return `
@@ -1114,7 +1199,7 @@ function renderPayrollAssignments(filtered) {
           <div class="w-24 shrink-0">
             <span class="text-sm font-medium text-gray-800">${isLeader ? '👑 ' : '👤 '}${esc(name)}</span>
           </div>
-          <div class="flex items-center gap-2 flex-1">
+          <div class="flex items-center gap-2 flex-1 flex-wrap">
             <div class="flex items-center gap-1">
               <input type="number" class="payroll-rate w-20 px-2 py-1.5 rounded-lg border border-gray-200 text-sm text-right
                      focus:ring-2 focus:ring-brand-200 focus:border-brand-500 outline-none transition"
@@ -1129,6 +1214,14 @@ function renderPayrollAssignments(filtered) {
                 placeholder="시간" min="0.5" step="0.5" value="${hours}"
                 oninput="calcPayrollRow(this)" />
               <span class="text-xs text-gray-400">h</span>
+            </div>
+            <span class="text-gray-300">+</span>
+            <div class="flex items-center gap-1">
+              <input type="number" class="payroll-bonus w-20 px-2 py-1.5 rounded-lg border border-gray-200 text-sm text-right
+                     focus:ring-2 focus:ring-brand-200 focus:border-brand-500 outline-none transition"
+                placeholder="기타수당" min="0" step="1000" value="${bonus}"
+                oninput="calcPayrollRow(this)" />
+              <span class="text-xs text-gray-400">원</span>
             </div>
             <span class="text-gray-300">=</span>
             <span class="payroll-row-total text-sm font-bold text-brand-700 w-28 text-right">${total ? '₩' + total.toLocaleString() : '₩0'}</span>
@@ -1171,7 +1264,8 @@ window.calcPayrollRow = function (input) {
   const row = input.closest('[data-worker-row]');
   const rate = parseFloat(row.querySelector('.payroll-rate').value) || 0;
   const hours = parseFloat(row.querySelector('.payroll-hours').value) || 0;
-  const total = Math.round(rate * hours);
+  const bonus = parseFloat(row.querySelector('.payroll-bonus').value) || 0;
+  const total = Math.round(rate * hours) + Math.round(bonus);
   row.querySelector('.payroll-row-total').textContent = '₩' + total.toLocaleString();
 
   const card = input.closest('.payroll-card');
@@ -1179,7 +1273,8 @@ window.calcPayrollRow = function (input) {
   card.querySelectorAll('[data-worker-row]').forEach(r => {
     const rt = parseFloat(r.querySelector('.payroll-rate').value) || 0;
     const hr = parseFloat(r.querySelector('.payroll-hours').value) || 0;
-    cardTotal += Math.round(rt * hr);
+    const bn = parseFloat(r.querySelector('.payroll-bonus').value) || 0;
+    cardTotal += Math.round(rt * hr) + Math.round(bn);
   });
   card.querySelector('.payroll-card-total').textContent = '₩' + cardTotal.toLocaleString();
 };
@@ -1199,6 +1294,7 @@ window.savePayrollForAssignment = async function (assignmentId) {
     const partnerId = row.dataset.partnerId;
     const rate = parseFloat(row.querySelector('.payroll-rate').value);
     const hours = parseFloat(row.querySelector('.payroll-hours').value);
+    const bonus = parseFloat(row.querySelector('.payroll-bonus').value) || 0;
 
     if (!rate || !hours) {
       hasError = true;
@@ -1210,7 +1306,8 @@ window.savePayrollForAssignment = async function (assignmentId) {
       partner_id: partnerId,
       hourly_rate: Math.round(rate),
       hours_worked: hours,
-      total_amount: Math.round(rate * hours),
+      bonus: Math.round(bonus),
+      total_amount: Math.round(rate * hours) + Math.round(bonus),
       work_date: assignment.assignment_date,
     });
   });

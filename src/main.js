@@ -200,7 +200,7 @@ async function loadPartners() {
   }
   partners = data || [];
   renderPartners();
-  populatePartnerSelect();
+  populateTeamSelect();
   updateDashboard();
 }
 
@@ -325,7 +325,7 @@ window.deletePartner = async function (id, name) {
 async function loadAssignments() {
   const { data, error } = await supabase
     .from('assignments')
-    .select('*, partners(name, region)')
+    .select('*, leader:partners!leader_id(name, region)')
     .order('assignment_date', { ascending: false });
 
   if (error) {
@@ -358,22 +358,28 @@ function renderAssignments() {
 
   container.innerHTML = filtered
     .map(
-      (a) => `
+      (a) => {
+      const leaderName = a.leader ? esc(a.leader.name) : '미지정';
+      const memberNames = getMemberNames(a.member_ids);
+      const teamHtml = memberNames.length > 0
+        ? `<p class="text-sm text-brand-700 font-medium mt-1">👑 팀장: ${leaderName}</p>
+           <p class="text-sm text-brand-500 mt-0.5">👥 팀원: ${memberNames.map(n => esc(n)).join(', ')}</p>`
+        : `<p class="text-sm text-brand-700 font-medium mt-1">담당: ${leaderName}</p>`;
+      return `
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
       <div class="flex items-start justify-between">
         <div class="flex-1">
           <div class="flex items-center gap-2">
             <h3 class="text-lg font-semibold text-gray-800">${esc(a.client_name)}</h3>
             ${statusBadge(a.status)}
+            ${memberNames.length > 0 ? `<span class="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">${memberNames.length + 1}명</span>` : ''}
           </div>
           <p class="text-sm text-gray-500 mt-1">${esc(a.client_address)}</p>
           <p class="text-sm text-gray-500">${a.assignment_date}</p>
-          <p class="text-sm text-brand-700 font-medium mt-1">담당: ${
-            a.partners ? esc(a.partners.name) : '미지정'
-          }</p>
+          ${teamHtml}
           ${a.notes ? `<p class="text-sm text-gray-400 mt-1">${esc(a.notes)}</p>` : ''}
         </div>
-      </div>
+      </div>`}
       <div class="mt-3 pt-3 border-t border-gray-50 flex gap-2 flex-wrap">
         ${
           a.status === '대기'
@@ -405,42 +411,99 @@ function renderAssignments() {
     .join('');
 }
 
-function populatePartnerSelect() {
-  const select = document.getElementById('assign-partner');
-  if (!select) return;
+function populateTeamSelect() {
+  const leaderSelect = document.getElementById('assign-leader');
+  if (!leaderSelect) return;
   const activePartners = partners.filter((p) => p.is_active);
-  select.innerHTML =
-    '<option value="">파트너 선택</option>' +
+
+  leaderSelect.innerHTML =
+    '<option value="">팀장 선택</option>' +
     activePartners
       .map((p) => `<option value="${p.id}">${esc(p.name)}${p.region ? ' (' + esc(p.region) + ')' : ''}</option>`)
       .join('');
+
+  const container = document.getElementById('member-checkboxes');
+  if (!container) return;
+
+  if (activePartners.length === 0) {
+    container.innerHTML = '<p class="text-xs text-gray-400 py-2 text-center">활동 중인 파트너가 없습니다</p>';
+    return;
+  }
+
+  container.innerHTML = activePartners
+    .map((p) => `
+      <label class="member-item" data-partner-id="${p.id}">
+        <input type="checkbox" name="members" value="${p.id}"
+          class="w-3.5 h-3.5 rounded border-gray-300 text-brand-600 focus:ring-brand-500">
+        <span class="text-xs text-gray-700">${esc(p.name)}</span>
+        ${p.region ? `<span class="text-[10px] text-gray-400">(${esc(p.region)})</span>` : ''}
+      </label>`)
+    .join('');
+
+  updateMemberCount();
+
+  leaderSelect.onchange = () => {
+    const leaderId = leaderSelect.value;
+    container.querySelectorAll('label[data-partner-id]').forEach((label) => {
+      const cb = label.querySelector('input[type="checkbox"]');
+      const isLeader = label.dataset.partnerId === leaderId;
+      cb.disabled = isLeader;
+      if (isLeader) cb.checked = false;
+      label.classList.toggle('disabled', isLeader);
+    });
+    updateMemberCount();
+  };
+
+  container.onchange = updateMemberCount;
+}
+
+function updateMemberCount() {
+  const checked = document.querySelectorAll('#member-checkboxes input[type="checkbox"]:checked');
+  const el = document.getElementById('member-count');
+  if (el) el.textContent = `선택된 팀원: ${checked.length}명`;
+}
+
+function getSelectedMemberIds() {
+  return Array.from(document.querySelectorAll('#member-checkboxes input[type="checkbox"]:checked'))
+    .map((cb) => cb.value);
+}
+
+function getMemberNames(memberIds) {
+  if (!memberIds || memberIds.length === 0) return [];
+  return memberIds
+    .map((id) => partners.find((p) => p.id === id))
+    .filter(Boolean)
+    .map((p) => p.name);
 }
 
 async function handleAddAssignment(e) {
   e.preventDefault();
   const form = e.target;
-  const partner_id = form.partner.value;
+  const leader_id = form.leader.value;
+  const member_ids = getSelectedMemberIds();
   const client_name = form.client_name.value.trim();
   const client_address = form.client_address.value.trim();
   const assignment_date = form.assignment_date.value;
   const notes = form.notes.value.trim();
 
-  if (!partner_id) {
-    showToast('담당 파트너를 선택하세요', 'error');
+  if (!leader_id) {
+    showToast('팀장을 선택하세요', 'error');
     return;
   }
 
   const { error } = await supabase
     .from('assignments')
-    .insert([{ partner_id, client_name, client_address, assignment_date, notes }]);
+    .insert([{ leader_id, member_ids, client_name, client_address, assignment_date, notes }]);
 
   if (error) {
     showToast('배정 등록 실패: ' + error.message, 'error');
     return;
   }
 
-  showToast('새 배정이 등록되었습니다');
+  const teamSize = 1 + member_ids.length;
+  showToast(`새 배정이 등록되었습니다 (${teamSize}명 배정)`);
   form.reset();
+  populateTeamSelect();
   await loadAssignments();
 }
 
@@ -582,15 +645,21 @@ function renderCalendar() {
 
       html += `<div class="flex-1 overflow-y-auto space-y-px" style="max-height:90px;">`;
       entries.forEach(a => {
-        const pName = a.partners ? a.partners.name : '?';
+        const leaderName = a.leader ? a.leader.name : '?';
+        const memberCount = (a.member_ids || []).length;
+        const teamLabel = memberCount > 0 ? `${leaderName} 외 ${memberCount}명` : leaderName;
         const statusStyles = {
           '대기': 'bg-amber-50 text-amber-800 border-l-2 border-amber-400',
           '완료': 'bg-blue-50 text-blue-800 border-l-2 border-blue-400',
           '종료': 'bg-gray-100 text-gray-500 border-l-2 border-gray-300',
         };
         const style = statusStyles[a.status] || 'bg-gray-50 text-gray-600';
-        const label = `[${a.status}] ${pName} - ${a.client_name}`;
-        html += `<div class="cal-entry ${style}" title="${esc(label)}">${esc(label)}</div>`;
+        const label = `[${a.status}] ${teamLabel} - ${a.client_name}`;
+        const fullMembers = getMemberNames(a.member_ids);
+        const tooltip = memberCount > 0
+          ? `팀장: ${leaderName} / 팀원: ${fullMembers.join(', ')} - ${a.client_name}`
+          : label;
+        html += `<div class="cal-entry ${style}" title="${esc(tooltip)}">${esc(label)}</div>`;
       });
       html += `</div>`;
     }

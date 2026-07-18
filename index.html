@@ -49,6 +49,10 @@
     .cal-cell { min-height: 110px; }
     @media (max-width: 640px) { .cal-cell { min-height: 80px; } }
     .cal-entry { font-size: 11px; line-height: 1.3; padding: 2px 4px; border-radius: 4px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .member-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 8px; cursor: pointer; transition: background-color 0.15s; }
+    .member-item:hover { background-color: #e5e7eb; }
+    .member-item.disabled { opacity: 0.35; cursor: not-allowed; }
+    .member-item.disabled:hover { background-color: transparent; }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -279,12 +283,20 @@
         <h2 class="text-base font-bold text-gray-700 mb-4">새 배정 등록</h2>
         <form id="form-assignment" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">담당 파트너 *</label>
-            <select id="assign-partner" name="partner" required
+            <label class="block text-xs font-medium text-gray-500 mb-1">👑 팀장 (필수) *</label>
+            <select id="assign-leader" name="leader" required
               class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm
                      focus:ring-2 focus:ring-brand-200 focus:border-brand-500 outline-none transition">
-              <option value="">파트너 선택</option>
+              <option value="">팀장 선택</option>
             </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">👥 팀원 (선택)</label>
+            <div id="member-checkboxes"
+              class="border border-gray-200 rounded-xl p-2 max-h-36 overflow-y-auto bg-gray-50">
+              <p class="text-xs text-gray-400 py-2 text-center">파트너 로딩 중...</p>
+            </div>
+            <p id="member-count" class="text-[10px] text-gray-400 mt-1">선택된 팀원: 0명</p>
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1">고객명 *</label>

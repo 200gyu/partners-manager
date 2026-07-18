@@ -5,6 +5,9 @@ import { getSession, onAuthStateChange, signIn, signUp, signOut } from './auth.j
 let partners = [];
 let assignments = [];
 let currentTab = 'partners';
+let assignmentView = 'list';
+let calYear = new Date().getFullYear();
+let calMonth = new Date().getMonth();
 
 // ─── 초기화 ───
 document.addEventListener('DOMContentLoaded', async () => {
@@ -331,6 +334,7 @@ async function loadAssignments() {
   }
   assignments = data || [];
   renderAssignments();
+  if (assignmentView === 'calendar') renderCalendar();
   updateDashboard();
 }
 
@@ -473,7 +477,129 @@ window.deleteAssignment = async function (id) {
 
 window.filterAssignments = function () {
   renderAssignments();
+  renderCalendar();
 };
+
+// ═══════════════════════════════════════
+//  달력 뷰
+// ═══════════════════════════════════════
+
+window.switchAssignmentView = function (view) {
+  assignmentView = view;
+  const btnList = document.getElementById('btn-view-list');
+  const btnCal = document.getElementById('btn-view-calendar');
+  const listEl = document.getElementById('assignment-list');
+  const calEl = document.getElementById('assignment-calendar');
+
+  if (view === 'list') {
+    btnList.className = 'view-toggle-active px-3 py-1 text-xs font-medium transition-all';
+    btnCal.className = 'view-toggle-inactive px-3 py-1 text-xs font-medium transition-all';
+    listEl.classList.remove('hidden');
+    calEl.classList.add('hidden');
+  } else {
+    btnCal.className = 'view-toggle-active px-3 py-1 text-xs font-medium transition-all';
+    btnList.className = 'view-toggle-inactive px-3 py-1 text-xs font-medium transition-all';
+    calEl.classList.remove('hidden');
+    listEl.classList.add('hidden');
+    renderCalendar();
+  }
+};
+
+window.calendarPrevMonth = function () {
+  calMonth--;
+  if (calMonth < 0) { calMonth = 11; calYear--; }
+  renderCalendar();
+};
+
+window.calendarNextMonth = function () {
+  calMonth++;
+  if (calMonth > 11) { calMonth = 0; calYear++; }
+  renderCalendar();
+};
+
+window.calendarGoToday = function () {
+  const now = new Date();
+  calYear = now.getFullYear();
+  calMonth = now.getMonth();
+  renderCalendar();
+};
+
+function renderCalendar() {
+  const titleEl = document.getElementById('calendar-title');
+  const gridEl = document.getElementById('calendar-grid');
+  if (!titleEl || !gridEl) return;
+
+  titleEl.textContent = `${calYear}년 ${calMonth + 1}월`;
+
+  const filterStatus = document.getElementById('filter-status')?.value || 'all';
+  const filtered = filterStatus === 'all'
+    ? assignments
+    : assignments.filter(a => a.status === filterStatus);
+
+  const byDate = {};
+  filtered.forEach(a => {
+    const d = a.assignment_date;
+    if (!d) return;
+    if (!byDate[d]) byDate[d] = [];
+    byDate[d].push(a);
+  });
+
+  const firstDay = new Date(calYear, calMonth, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+  const totalCells = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+  let html = '';
+
+  for (let i = 0; i < totalCells; i++) {
+    const dayNum = i - firstDay + 1;
+    const isCurrentMonth = dayNum >= 1 && dayNum <= daysInMonth;
+    const dateStr = isCurrentMonth
+      ? `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
+      : '';
+    const isToday = dateStr === todayStr;
+    const dayOfWeek = i % 7;
+    const isSunday = dayOfWeek === 0;
+    const isSaturday = dayOfWeek === 6;
+
+    const cellBg = isCurrentMonth ? (isToday ? 'bg-brand-50' : 'bg-white') : 'bg-gray-50';
+    const entries = isCurrentMonth && byDate[dateStr] ? byDate[dateStr] : [];
+
+    html += `<div class="cal-cell ${cellBg} p-1 flex flex-col">`;
+
+    if (isCurrentMonth) {
+      const dayColor = isSunday ? 'text-red-500' : isSaturday ? 'text-blue-500' : 'text-gray-700';
+      const todayRing = isToday ? 'bg-brand-700 text-white rounded-full w-6 h-6 flex items-center justify-center' : '';
+      html += `<div class="text-xs font-semibold ${dayColor} mb-0.5 flex items-center justify-between">`;
+      html += todayRing
+        ? `<span class="${todayRing}">${dayNum}</span>`
+        : `<span>${dayNum}</span>`;
+      if (entries.length > 0) {
+        html += `<span class="text-[9px] font-normal text-gray-400">${entries.length}건</span>`;
+      }
+      html += `</div>`;
+
+      html += `<div class="flex-1 overflow-y-auto space-y-px" style="max-height:90px;">`;
+      entries.forEach(a => {
+        const pName = a.partners ? a.partners.name : '?';
+        const statusStyles = {
+          '대기': 'bg-amber-50 text-amber-800 border-l-2 border-amber-400',
+          '완료': 'bg-blue-50 text-blue-800 border-l-2 border-blue-400',
+          '종료': 'bg-gray-100 text-gray-500 border-l-2 border-gray-300',
+        };
+        const style = statusStyles[a.status] || 'bg-gray-50 text-gray-600';
+        const label = `[${a.status}] ${pName} - ${a.client_name}`;
+        html += `<div class="cal-entry ${style}" title="${esc(label)}">${esc(label)}</div>`;
+      });
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+  }
+
+  gridEl.innerHTML = html;
+}
 
 // ═══════════════════════════════════════
 //  유틸리티

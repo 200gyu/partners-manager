@@ -11,6 +11,7 @@ let calMonth = new Date().getMonth();
 let dayOffs = [];
 let dayoffCalYear = new Date().getFullYear();
 let dayoffCalMonth = new Date().getMonth();
+let payrollRecords = [];
 
 // ─── 초기화 ───
 document.addEventListener('DOMContentLoaded', async () => {
@@ -120,9 +121,11 @@ function showApp(session) {
   setupTabs();
   setupForms();
   setupDayOffForm();
+  setupPayrollEvents();
   loadPartners();
   loadAssignments();
   loadDayOffs();
+  loadPayrollRecords();
   setupPartnerSearch();
 }
 
@@ -147,6 +150,10 @@ function setupTabs() {
       });
       document.getElementById('panel-partners').classList.toggle('hidden', currentTab !== 'partners');
       document.getElementById('panel-assignments').classList.toggle('hidden', currentTab !== 'assignments');
+      document.getElementById('panel-payroll').classList.toggle('hidden', currentTab !== 'payroll');
+      if (currentTab === 'payroll') {
+        initPayrollPanel();
+      }
     });
   });
 }
@@ -991,4 +998,306 @@ function showToast(message, type = 'success') {
     toast.classList.add('translate-y-2', 'opacity-0');
     setTimeout(() => toast.remove(), 300);
   }, 3000);
+}
+
+// ═══════════════════════════════════════
+//  급여 정산 관리
+// ═══════════════════════════════════════
+
+function setupPayrollEvents() {
+  const btn = document.getElementById('btn-payroll-search');
+  if (btn) btn.addEventListener('click', searchPayrollAssignments);
+
+  const monthSelect = document.getElementById('payroll-stat-month');
+  if (monthSelect) monthSelect.addEventListener('change', renderPayrollDashboard);
+}
+
+function initPayrollPanel() {
+  const startEl = document.getElementById('payroll-date-start');
+  const endEl = document.getElementById('payroll-date-end');
+  if (startEl && !startEl.value) {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    startEl.value = `${y}-${m}-01`;
+    endEl.value = `${y}-${m}-${String(new Date(y, now.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
+  }
+  populatePayrollMonthSelect();
+  renderPayrollDashboard();
+}
+
+function populatePayrollMonthSelect() {
+  const select = document.getElementById('payroll-stat-month');
+  if (!select) return;
+
+  const months = new Set();
+  const now = new Date();
+  months.add(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+
+  payrollRecords.forEach(r => {
+    if (r.work_date) months.add(r.work_date.slice(0, 7));
+  });
+
+  const sorted = [...months].sort().reverse();
+  select.innerHTML = sorted
+    .map(m => {
+      const [y, mo] = m.split('-');
+      return `<option value="${m}">${y}년 ${parseInt(mo)}월</option>`;
+    })
+    .join('');
+}
+
+async function loadPayrollRecords() {
+  const { data, error } = await supabase
+    .from('payroll_records')
+    .select('*')
+    .order('work_date', { ascending: false });
+
+  if (error) {
+    showToast('급여 데이터 로딩 실패: ' + error.message, 'error');
+    return;
+  }
+  payrollRecords = data || [];
+}
+
+function searchPayrollAssignments() {
+  const startDate = document.getElementById('payroll-date-start').value;
+  const endDate = document.getElementById('payroll-date-end').value;
+
+  if (!startDate || !endDate) {
+    showToast('날짜를 선택하세요', 'error');
+    return;
+  }
+
+  const completed = assignments.filter(a =>
+    (a.status === '완료' || a.status === '종료') &&
+    a.assignment_date >= startDate &&
+    a.assignment_date <= endDate
+  );
+
+  renderPayrollAssignments(completed);
+}
+
+function renderPayrollAssignments(filtered) {
+  const container = document.getElementById('payroll-assignment-list');
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="text-center py-8 text-gray-400">
+        <p class="text-sm">해당 기간에 완료/종료된 배정이 없습니다</p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map(a => {
+    const leaderName = a.leader ? a.leader.name : '미지정';
+    const allIds = [a.leader_id, ...(a.member_ids || [])];
+    const allNames = allIds.map(id => {
+      const p = partners.find(x => x.id === id);
+      return p ? p.name : '?';
+    });
+
+    const existingRecords = payrollRecords.filter(r => r.assignment_id === a.id);
+    const isSaved = existingRecords.length > 0;
+    const savedTotal = existingRecords.reduce((sum, r) => sum + r.total_amount, 0);
+
+    const workerRows = allIds.map((id, idx) => {
+      const name = allNames[idx];
+      const isLeader = id === a.leader_id;
+      const existing = existingRecords.find(r => r.partner_id === id);
+      const rate = existing ? existing.hourly_rate : '';
+      const hours = existing ? existing.hours_worked : '';
+      const total = existing ? existing.total_amount : 0;
+
+      return `
+        <div class="flex items-center gap-3 py-2 ${idx > 0 ? 'border-t border-gray-50' : ''}" data-worker-row data-partner-id="${id}" data-assignment-id="${a.id}">
+          <div class="w-24 shrink-0">
+            <span class="text-sm font-medium text-gray-800">${isLeader ? '👑 ' : '👤 '}${esc(name)}</span>
+          </div>
+          <div class="flex items-center gap-2 flex-1">
+            <div class="flex items-center gap-1">
+              <input type="number" class="payroll-rate w-20 px-2 py-1.5 rounded-lg border border-gray-200 text-sm text-right
+                     focus:ring-2 focus:ring-brand-200 focus:border-brand-500 outline-none transition"
+                placeholder="시급" min="1" step="1000" value="${rate}"
+                oninput="calcPayrollRow(this)" />
+              <span class="text-xs text-gray-400">원</span>
+            </div>
+            <span class="text-gray-300">×</span>
+            <div class="flex items-center gap-1">
+              <input type="number" class="payroll-hours w-16 px-2 py-1.5 rounded-lg border border-gray-200 text-sm text-right
+                     focus:ring-2 focus:ring-brand-200 focus:border-brand-500 outline-none transition"
+                placeholder="시간" min="0.5" step="0.5" value="${hours}"
+                oninput="calcPayrollRow(this)" />
+              <span class="text-xs text-gray-400">h</span>
+            </div>
+            <span class="text-gray-300">=</span>
+            <span class="payroll-row-total text-sm font-bold text-brand-700 w-28 text-right">${total ? '₩' + total.toLocaleString() : '₩0'}</span>
+          </div>
+        </div>`;
+    }).join('');
+
+    const statusBg = isSaved ? 'border-emerald-200 bg-emerald-50/30' : 'border-gray-100';
+
+    return `
+      <div class="bg-white rounded-xl shadow-sm border ${statusBg} p-5 payroll-card" data-assignment-id="${a.id}">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="text-base font-bold text-gray-800">${esc(a.client_name)}</h3>
+              ${isSaved ? '<span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">저장됨</span>' : ''}
+            </div>
+            <p class="text-xs text-gray-500 mt-0.5">${esc(a.client_address)} · ${a.assignment_date}</p>
+          </div>
+          <div class="text-right">
+            <p class="text-[10px] text-gray-400">배정 합계</p>
+            <p class="payroll-card-total text-lg font-bold text-brand-800">${isSaved ? '₩' + savedTotal.toLocaleString() : '₩0'}</p>
+          </div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-3">
+          ${workerRows}
+        </div>
+        <div class="mt-3 flex justify-end">
+          <button onclick="savePayrollForAssignment('${a.id}')"
+            class="px-5 py-2 bg-brand-700 text-white text-sm font-semibold rounded-xl
+                   hover:bg-brand-800 active:scale-[0.98] transition-all">
+            ${isSaved ? '💾 수정 저장' : '💾 급여 저장'}
+          </button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+window.calcPayrollRow = function (input) {
+  const row = input.closest('[data-worker-row]');
+  const rate = parseFloat(row.querySelector('.payroll-rate').value) || 0;
+  const hours = parseFloat(row.querySelector('.payroll-hours').value) || 0;
+  const total = Math.round(rate * hours);
+  row.querySelector('.payroll-row-total').textContent = '₩' + total.toLocaleString();
+
+  const card = input.closest('.payroll-card');
+  let cardTotal = 0;
+  card.querySelectorAll('[data-worker-row]').forEach(r => {
+    const rt = parseFloat(r.querySelector('.payroll-rate').value) || 0;
+    const hr = parseFloat(r.querySelector('.payroll-hours').value) || 0;
+    cardTotal += Math.round(rt * hr);
+  });
+  card.querySelector('.payroll-card-total').textContent = '₩' + cardTotal.toLocaleString();
+};
+
+window.savePayrollForAssignment = async function (assignmentId) {
+  const card = document.querySelector(`.payroll-card[data-assignment-id="${assignmentId}"]`);
+  if (!card) return;
+
+  const assignment = assignments.find(a => a.id === assignmentId);
+  if (!assignment) return;
+
+  const rows = card.querySelectorAll('[data-worker-row]');
+  const records = [];
+  let hasError = false;
+
+  rows.forEach(row => {
+    const partnerId = row.dataset.partnerId;
+    const rate = parseFloat(row.querySelector('.payroll-rate').value);
+    const hours = parseFloat(row.querySelector('.payroll-hours').value);
+
+    if (!rate || !hours) {
+      hasError = true;
+      return;
+    }
+
+    records.push({
+      assignment_id: assignmentId,
+      partner_id: partnerId,
+      hourly_rate: Math.round(rate),
+      hours_worked: hours,
+      total_amount: Math.round(rate * hours),
+      work_date: assignment.assignment_date,
+    });
+  });
+
+  if (hasError || records.length === 0) {
+    showToast('모든 근무자의 시급과 근무시간을 입력하세요', 'error');
+    return;
+  }
+
+  const { error: delError } = await supabase
+    .from('payroll_records')
+    .delete()
+    .eq('assignment_id', assignmentId);
+
+  if (delError) {
+    showToast('기존 데이터 삭제 실패: ' + delError.message, 'error');
+    return;
+  }
+
+  const { error: insError } = await supabase
+    .from('payroll_records')
+    .insert(records);
+
+  if (insError) {
+    showToast('급여 저장 실패: ' + insError.message, 'error');
+    return;
+  }
+
+  const totalAmount = records.reduce((s, r) => s + r.total_amount, 0);
+  showToast(`급여가 저장되었습니다 (총 ₩${totalAmount.toLocaleString()})`);
+  await loadPayrollRecords();
+  searchPayrollAssignments();
+  populatePayrollMonthSelect();
+  renderPayrollDashboard();
+};
+
+function renderPayrollDashboard() {
+  const monthSelect = document.getElementById('payroll-stat-month');
+  if (!monthSelect) return;
+  const selectedMonth = monthSelect.value;
+  if (!selectedMonth) return;
+
+  const monthRecords = payrollRecords.filter(r => r.work_date && r.work_date.startsWith(selectedMonth));
+
+  const totalAmount = monthRecords.reduce((s, r) => s + r.total_amount, 0);
+  const totalCount = monthRecords.length;
+  const uniqueWorkers = new Set(monthRecords.map(r => r.partner_id)).size;
+  const avgRate = totalCount > 0
+    ? Math.round(monthRecords.reduce((s, r) => s + r.hourly_rate, 0) / totalCount)
+    : 0;
+
+  document.getElementById('payroll-stat-total').textContent = '₩' + totalAmount.toLocaleString();
+  document.getElementById('payroll-stat-count').textContent = totalCount + '건';
+  document.getElementById('payroll-stat-workers').textContent = uniqueWorkers + '명';
+  document.getElementById('payroll-stat-avg-rate').textContent = '₩' + avgRate.toLocaleString();
+
+  const byPartner = {};
+  monthRecords.forEach(r => {
+    if (!byPartner[r.partner_id]) {
+      byPartner[r.partner_id] = { count: 0, totalHours: 0, totalAmount: 0, rates: [] };
+    }
+    byPartner[r.partner_id].count++;
+    byPartner[r.partner_id].totalHours += parseFloat(r.hours_worked);
+    byPartner[r.partner_id].totalAmount += r.total_amount;
+    byPartner[r.partner_id].rates.push(r.hourly_rate);
+  });
+
+  const tableBody = document.getElementById('payroll-stat-table');
+  const entries = Object.entries(byPartner)
+    .sort((a, b) => b[1].totalAmount - a[1].totalAmount);
+
+  if (entries.length === 0) {
+    tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-gray-400">해당 월의 급여 데이터가 없습니다</td></tr>';
+    return;
+  }
+
+  tableBody.innerHTML = entries.map(([pid, data]) => {
+    const partner = partners.find(p => p.id === pid);
+    const name = partner ? partner.name : '알 수 없음';
+    const avgPartnerRate = Math.round(data.rates.reduce((s, r) => s + r, 0) / data.rates.length);
+    return `
+      <tr class="hover:bg-gray-50 transition-colors">
+        <td class="py-3 px-3 font-medium text-gray-800">${esc(name)}</td>
+        <td class="py-3 px-3 text-center text-gray-600">${data.count}건</td>
+        <td class="py-3 px-3 text-center text-gray-600">${data.totalHours}h</td>
+        <td class="py-3 px-3 text-center text-gray-600">₩${avgPartnerRate.toLocaleString()}</td>
+        <td class="py-3 px-3 text-right font-bold text-brand-700">₩${data.totalAmount.toLocaleString()}</td>
+      </tr>`;
+  }).join('');
 }

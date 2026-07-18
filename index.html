@@ -211,6 +211,10 @@
           class="tab-inactive px-5 py-2.5 rounded-xl text-sm font-semibold transition-all">
           📋 배정 현황
         </button>
+        <button data-tab="payroll"
+          class="tab-inactive px-5 py-2.5 rounded-xl text-sm font-semibold transition-all">
+          💰 급여 관리
+        </button>
       </div>
     </nav>
 
@@ -500,6 +504,96 @@
               </span>
             </div>
           </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ═══ 급여 관리 패널 ═══ -->
+    <main id="panel-payroll" class="max-w-6xl mx-auto px-4 py-6 hidden">
+
+      <!-- 급여 입력 섹션 -->
+      <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+        <h2 class="text-base font-bold text-gray-700 mb-4">💰 배정별 급여 입력</h2>
+
+        <!-- 날짜 선택 -->
+        <div class="flex items-end gap-4 mb-6">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">조회 시작일</label>
+            <input type="date" id="payroll-date-start"
+              class="px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm
+                     focus:ring-2 focus:ring-brand-200 focus:border-brand-500 outline-none transition" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">조회 종료일</label>
+            <input type="date" id="payroll-date-end"
+              class="px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm
+                     focus:ring-2 focus:ring-brand-200 focus:border-brand-500 outline-none transition" />
+          </div>
+          <button id="btn-payroll-search" type="button"
+            class="px-5 py-2.5 bg-brand-700 text-white text-sm font-semibold
+                   rounded-xl hover:bg-brand-800 active:scale-[0.98] transition-all">
+            🔍 조회
+          </button>
+        </div>
+
+        <!-- 배정 목록 (날짜 조회 결과) -->
+        <div id="payroll-assignment-list" class="space-y-4">
+          <div class="text-center py-8 text-gray-400">
+            <p class="text-sm">날짜를 선택하고 조회 버튼을 클릭하세요</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 급여 통계 대시보드 -->
+      <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-bold text-gray-700">📊 급여 통계</h2>
+          <div class="flex items-center gap-2">
+            <select id="payroll-stat-month"
+              class="px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600
+                     focus:ring-2 focus:ring-brand-200 focus:border-brand-500 outline-none">
+            </select>
+          </div>
+        </div>
+
+        <!-- 통계 카드 -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <div class="bg-gradient-to-br from-brand-50 to-blue-50 rounded-xl border border-brand-100 p-4">
+            <p class="text-[11px] text-brand-600 font-medium">총 지급액</p>
+            <p id="payroll-stat-total" class="text-xl font-bold text-brand-800 mt-1">₩0</p>
+          </div>
+          <div class="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl border border-emerald-100 p-4">
+            <p class="text-[11px] text-emerald-600 font-medium">정산 건수</p>
+            <p id="payroll-stat-count" class="text-xl font-bold text-emerald-800 mt-1">0건</p>
+          </div>
+          <div class="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl border border-amber-100 p-4">
+            <p class="text-[11px] text-amber-600 font-medium">투입 인원</p>
+            <p id="payroll-stat-workers" class="text-xl font-bold text-amber-800 mt-1">0명</p>
+          </div>
+          <div class="bg-gradient-to-br from-purple-50 to-violet-50 rounded-xl border border-purple-100 p-4">
+            <p class="text-[11px] text-purple-600 font-medium">평균 시급</p>
+            <p id="payroll-stat-avg-rate" class="text-xl font-bold text-purple-800 mt-1">₩0</p>
+          </div>
+        </div>
+
+        <!-- 파트너별 급여 명세 테이블 -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-gray-200">
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500">파트너</th>
+                <th class="text-center py-3 px-3 text-xs font-semibold text-gray-500">근무 건수</th>
+                <th class="text-center py-3 px-3 text-xs font-semibold text-gray-500">총 근무시간</th>
+                <th class="text-center py-3 px-3 text-xs font-semibold text-gray-500">평균 시급</th>
+                <th class="text-right py-3 px-3 text-xs font-semibold text-gray-500">총 급여</th>
+              </tr>
+            </thead>
+            <tbody id="payroll-stat-table" class="divide-y divide-gray-100">
+              <tr>
+                <td colspan="5" class="text-center py-8 text-gray-400">월을 선택하면 통계가 표시됩니다</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
     </main>

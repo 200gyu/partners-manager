@@ -379,7 +379,7 @@ function renderAssignments() {
           ${teamHtml}
           ${a.notes ? `<p class="text-sm text-gray-400 mt-1">${esc(a.notes)}</p>` : ''}
         </div>
-      </div>`}
+      </div>
       <div class="mt-3 pt-3 border-t border-gray-50 flex gap-2 flex-wrap">
         ${
           a.status === '대기'
@@ -406,7 +406,7 @@ function renderAssignments() {
             : ''
         }
       </div>
-    </div>`
+    </div>`}
     )
     .join('');
 }

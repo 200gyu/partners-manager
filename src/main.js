@@ -225,8 +225,8 @@ function renderPartners(searchQuery = '') {
       <div class="flex items-start justify-between">
         <div class="flex-1 min-w-0">
           <h3 class="text-lg font-semibold text-gray-800">${esc(p.name)}</h3>
-          <p class="text-sm text-gray-500 mt-1">${esc(p.region)}</p>
-          <p class="text-sm text-gray-500">${esc(p.phone)}</p>
+          <p class="text-sm text-gray-500 mt-1">${p.region ? esc(p.region) : '<span class=&quot;text-gray-300&quot;>지역 미입력</span>'}</p>
+          <p class="text-sm text-gray-500">${p.phone ? esc(p.phone) : '<span class=&quot;text-gray-300&quot;>연락처 미입력</span>'}</p>
           <p class="text-sm text-gray-400">${esc(p.specialty)}</p>
         </div>
         <span class="px-3 py-1 text-xs font-medium rounded-full shrink-0 ${
@@ -264,14 +264,14 @@ async function handleAddPartner(e) {
   const region = form.region.value.trim();
   const specialty = form.specialty.value.trim() || '정리수납';
 
-  if (!validatePhone(phone)) {
+  if (phone && !validatePhone(phone)) {
     showToast('전화번호 형식이 올바르지 않습니다 (예: 010-1234-5678)', 'error');
     return;
   }
 
   const { error } = await supabase
     .from('partners')
-    .insert([{ name, phone, region, specialty }]);
+    .insert([{ name, phone: phone || '', region: region || '', specialty }]);
 
   if (error) {
     showToast('등록 실패: ' + error.message, 'error');
@@ -408,7 +408,7 @@ function populatePartnerSelect() {
   select.innerHTML =
     '<option value="">파트너 선택</option>' +
     activePartners
-      .map((p) => `<option value="${p.id}">${esc(p.name)} (${esc(p.region)})</option>`)
+      .map((p) => `<option value="${p.id}">${esc(p.name)}${p.region ? ' (' + esc(p.region) + ')' : ''}</option>`)
       .join('');
 }
 

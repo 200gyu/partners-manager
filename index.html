@@ -48,7 +48,8 @@
     .view-toggle-inactive:hover { background-color: #e5e7eb; }
     .cal-cell { min-height: 110px; }
     @media (max-width: 640px) { .cal-cell { min-height: 80px; } }
-    .cal-entry { font-size: 11px; line-height: 1.3; padding: 2px 4px; border-radius: 4px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cal-entry { font-size: 11px; line-height: 1.3; padding: 2px 4px; border-radius: 4px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+    .cal-entry:hover { filter: brightness(0.92); }
     .member-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 8px; cursor: pointer; transition: background-color 0.15s; }
     .member-item:hover { background-color: #e5e7eb; }
     .member-item.disabled { opacity: 0.35; cursor: not-allowed; }
@@ -425,6 +426,45 @@
         (주) 케이제이파트너스 | 정리수납 및 컨설팅 | 제주특별자치도 제주시
       </p>
     </footer>
+  </div>
+
+  <!-- 배정 상세 모달 -->
+  <div id="assignment-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeAssignmentModal()"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+      <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full pointer-events-auto fade-in overflow-hidden">
+        <div id="modal-status-bar" class="h-1.5"></div>
+        <div class="p-6">
+          <div class="flex items-start justify-between mb-4">
+            <div>
+              <h3 id="modal-client-name" class="text-lg font-bold text-gray-800"></h3>
+              <p id="modal-address" class="text-sm text-gray-500 mt-0.5"></p>
+            </div>
+            <button onclick="closeAssignmentModal()"
+              class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400
+                     hover:bg-gray-100 hover:text-gray-600 transition-colors text-lg">×</button>
+          </div>
+          <div class="space-y-3">
+            <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+              <span class="text-xs font-medium text-gray-400 w-16 shrink-0">상태</span>
+              <span id="modal-status" class="px-2.5 py-0.5 text-xs font-medium rounded-full"></span>
+            </div>
+            <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+              <span class="text-xs font-medium text-gray-400 w-16 shrink-0">배정일</span>
+              <span id="modal-date" class="text-sm text-gray-700"></span>
+            </div>
+            <div class="p-3 bg-gray-50 rounded-xl">
+              <span class="text-xs font-medium text-gray-400">팀 구성</span>
+              <div id="modal-team" class="mt-2 space-y-1.5"></div>
+            </div>
+            <div id="modal-notes-section" class="p-3 bg-gray-50 rounded-xl hidden">
+              <span class="text-xs font-medium text-gray-400">메모</span>
+              <p id="modal-notes" class="text-sm text-gray-700 mt-1"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- 토스트 컨테이너 -->

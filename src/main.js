@@ -371,7 +371,6 @@ function renderAssignments() {
         <div class="flex-1">
           <div class="flex items-center gap-2">
             <h3 class="text-lg font-semibold text-gray-800">${esc(a.client_name)}</h3>
-            ${statusBadge(a.status)}
             ${memberNames.length > 0 ? `<span class="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">${memberNames.length + 1}명</span>` : ''}
           </div>
           <p class="text-sm text-gray-500 mt-1">${esc(a.client_address)}</p>
@@ -380,31 +379,19 @@ function renderAssignments() {
           ${a.notes ? `<p class="text-sm text-gray-400 mt-1">${esc(a.notes)}</p>` : ''}
         </div>
       </div>
-      <div class="mt-3 pt-3 border-t border-gray-50 flex gap-2 flex-wrap">
-        ${
-          a.status === '대기'
-            ? `<button onclick="updateStatus('${a.id}', '완료')"
-                class="text-xs px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors">
-                매칭 완료
-              </button>`
-            : ''
-        }
-        ${
-          a.status === '완료'
-            ? `<button onclick="updateStatus('${a.id}', '종료')"
-                class="text-xs px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors">
-                작업 종료
-              </button>`
-            : ''
-        }
-        ${
-          a.status !== '종료'
-            ? `<button onclick="deleteAssignment('${a.id}')"
-                class="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
-                삭제
-              </button>`
-            : ''
-        }
+      <div class="mt-3 pt-3 border-t border-gray-50 flex items-center gap-2 flex-wrap">
+        <select onchange="updateStatus('${a.id}', this.value)"
+          class="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 font-medium outline-none
+                 focus:ring-2 focus:ring-brand-200 focus:border-brand-500 transition
+                 ${a.status === '대기' ? 'bg-amber-50 text-amber-700 border-amber-200' : a.status === '완료' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-100 text-gray-500 border-gray-300'}">
+          <option value="대기" ${a.status === '대기' ? 'selected' : ''}>⏳ 대기</option>
+          <option value="완료" ${a.status === '완료' ? 'selected' : ''}>✅ 완료</option>
+          <option value="종료" ${a.status === '종료' ? 'selected' : ''}>🏁 종료</option>
+        </select>
+        <button onclick="deleteAssignment('${a.id}')"
+          class="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
+          삭제
+        </button>
       </div>
     </div>`}
     )
@@ -508,6 +495,9 @@ async function handleAddAssignment(e) {
 }
 
 window.updateStatus = async function (id, newStatus) {
+  const current = assignments.find(a => a.id === id);
+  if (current && current.status === newStatus) return;
+
   const { error } = await supabase
     .from('assignments')
     .update({ status: newStatus })
@@ -517,8 +507,8 @@ window.updateStatus = async function (id, newStatus) {
     showToast('상태 변경 실패: ' + error.message, 'error');
     return;
   }
-  const label = { '완료': '매칭 완료', '종료': '작업 종료' };
-  showToast(`${label[newStatus] || newStatus} 처리되었습니다`);
+  const labels = { '대기': '대기 상태로', '완료': '매칭 완료', '종료': '작업 종료' };
+  showToast(`${labels[newStatus] || newStatus} 처리되었습니다`);
   await loadAssignments();
 };
 
@@ -647,19 +637,20 @@ function renderCalendar() {
       entries.forEach(a => {
         const leaderName = a.leader ? a.leader.name : '?';
         const memberCount = (a.member_ids || []).length;
-        const teamLabel = memberCount > 0 ? `${leaderName} 외 ${memberCount}명` : leaderName;
+        const region = extractRegion(a.client_address);
+        const teamSuffix = memberCount > 0 ? ` 외 ${memberCount}명` : '';
+        const label = `${a.client_name}${region ? '_' + region : ''}_${leaderName}${teamSuffix}`;
         const statusStyles = {
           '대기': 'bg-amber-50 text-amber-800 border-l-2 border-amber-400',
           '완료': 'bg-blue-50 text-blue-800 border-l-2 border-blue-400',
           '종료': 'bg-gray-100 text-gray-500 border-l-2 border-gray-300',
         };
         const style = statusStyles[a.status] || 'bg-gray-50 text-gray-600';
-        const label = `[${a.status}] ${teamLabel} - ${a.client_name}`;
         const fullMembers = getMemberNames(a.member_ids);
         const tooltip = memberCount > 0
-          ? `팀장: ${leaderName} / 팀원: ${fullMembers.join(', ')} - ${a.client_name}`
-          : label;
-        html += `<div class="cal-entry ${style}" title="${esc(tooltip)}">${esc(label)}</div>`;
+          ? `[${a.status}] ${a.client_name} / 팀장: ${leaderName} / 팀원: ${fullMembers.join(', ')}`
+          : `[${a.status}] ${a.client_name} / 담당: ${leaderName}`;
+        html += `<div class="cal-entry ${style}" title="${esc(tooltip)}" onclick="openAssignmentModal('${a.id}')">${esc(label)}</div>`;
       });
       html += `</div>`;
     }
@@ -671,8 +662,84 @@ function renderCalendar() {
 }
 
 // ═══════════════════════════════════════
+//  배정 상세 모달
+// ═══════════════════════════════════════
+
+window.openAssignmentModal = function (id) {
+  const a = assignments.find(x => x.id === id);
+  if (!a) return;
+
+  const modal = document.getElementById('assignment-modal');
+  document.getElementById('modal-client-name').textContent = a.client_name;
+  document.getElementById('modal-address').textContent = a.client_address;
+  document.getElementById('modal-date').textContent = a.assignment_date;
+
+  const statusBarColors = { '대기': 'bg-amber-400', '완료': 'bg-blue-500', '종료': 'bg-gray-400' };
+  document.getElementById('modal-status-bar').className = `h-1.5 ${statusBarColors[a.status] || 'bg-gray-300'}`;
+
+  const statusEl = document.getElementById('modal-status');
+  const statusBadgeStyles = { '대기': 'bg-amber-50 text-amber-700', '완료': 'bg-blue-50 text-blue-700', '종료': 'bg-gray-100 text-gray-500' };
+  statusEl.className = `px-2.5 py-0.5 text-xs font-medium rounded-full ${statusBadgeStyles[a.status] || ''}`;
+  statusEl.textContent = a.status;
+
+  const leaderName = a.leader ? a.leader.name : '미지정';
+  const leaderRegion = a.leader && a.leader.region ? ` (${a.leader.region})` : '';
+  const memberNames = getMemberNames(a.member_ids);
+  let teamHtml = `<div class="flex items-center gap-2">
+    <span class="text-sm">👑</span>
+    <span class="text-sm font-medium text-gray-800">${esc(leaderName)}${esc(leaderRegion)}</span>
+    <span class="text-[10px] text-gray-400">팀장</span>
+  </div>`;
+  memberNames.forEach(name => {
+    teamHtml += `<div class="flex items-center gap-2">
+      <span class="text-sm">👤</span>
+      <span class="text-sm text-gray-700">${esc(name)}</span>
+      <span class="text-[10px] text-gray-400">팀원</span>
+    </div>`;
+  });
+  document.getElementById('modal-team').innerHTML = teamHtml;
+
+  const notesSection = document.getElementById('modal-notes-section');
+  if (a.notes) {
+    document.getElementById('modal-notes').textContent = a.notes;
+    notesSection.classList.remove('hidden');
+  } else {
+    notesSection.classList.add('hidden');
+  }
+
+  modal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+};
+
+window.closeAssignmentModal = function () {
+  document.getElementById('assignment-modal').classList.add('hidden');
+  document.body.style.overflow = '';
+};
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const modal = document.getElementById('assignment-modal');
+    if (modal && !modal.classList.contains('hidden')) {
+      closeAssignmentModal();
+    }
+  }
+});
+
+// ═══════════════════════════════════════
 //  유틸리티
 // ═══════════════════════════════════════
+
+function extractRegion(address) {
+  if (!address) return '';
+  const guMatch = address.match(/([가-힣]{1,4})구(?:\s|$|[^가-힣])/);
+  if (guMatch) return guMatch[1];
+  const stripped = address.replace(/^(?:서울특별시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시|세종특별자치시|제주특별자치도|경기도|충청북도|충청남도|전라북도|전북특별자치도|전라남도|경상북도|경상남도|강원특별자치도|강원도)\s*/, '');
+  const siMatch = stripped.match(/([가-힣]{1,4})시(?:\s|$|[^가-힣])/);
+  if (siMatch) return siMatch[1];
+  const metroMatch = address.match(/^(서울|부산|대구|인천|광주|대전|울산|세종|제주)/);
+  if (metroMatch) return metroMatch[1];
+  return '';
+}
 
 function validatePhone(phone) {
   return /^\d{2,3}-\d{3,4}-\d{4}$/.test(phone);

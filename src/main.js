@@ -1,9 +1,17 @@
 import { supabase } from './supabase.js';
 import { getSession, onAuthStateChange, signIn, signUp, signOut } from './auth.js';
-import { MOCK_PARTNERS, MOCK_ASSIGNMENTS, MOCK_PAYROLL_RECORDS } from './mockData.js';
 
-// ─── Mock Data 모드 ───
-const USE_MOCK_DATA = true;
+// ─── Mock Data 모드 (로컬 개발용, 운영 시 false) ───
+const USE_MOCK_DATA = false;
+let MOCK_PARTNERS = [], MOCK_ASSIGNMENTS = [], MOCK_PAYROLL_RECORDS = [];
+if (USE_MOCK_DATA) {
+  try {
+    const m = await import('./mockData.js');
+    MOCK_PARTNERS = m.MOCK_PARTNERS;
+    MOCK_ASSIGNMENTS = m.MOCK_ASSIGNMENTS;
+    MOCK_PAYROLL_RECORDS = m.MOCK_PAYROLL_RECORDS;
+  } catch { /* mockData.js 미존재 시 빈 배열 유지 */ }
+}
 
 // ─── 상태 ───
 let partners = [];

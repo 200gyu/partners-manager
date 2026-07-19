@@ -1,17 +1,23 @@
 import { supabase } from './supabase.js';
 import { getSession, onAuthStateChange, signIn, signUp, signOut } from './auth.js';
 
-// ─── Mock Data 모드 (로컬 개발용, 운영 시 false) ───
-const USE_MOCK_DATA = false;
+// ─── Mock Data 모드 ───
+// 로컬 개발(vite dev)에서만 활성화. mockData.js는 실명 포함으로 gitignore 처리되어
+// 운영 빌드에는 존재하지 않으며, 운영은 항상 Supabase(인증+RLS)를 사용한다.
 let MOCK_PARTNERS = [], MOCK_ASSIGNMENTS = [], MOCK_PAYROLL_RECORDS = [];
-if (USE_MOCK_DATA) {
-  try {
-    const m = await import('./mockData.js');
-    MOCK_PARTNERS = m.MOCK_PARTNERS;
-    MOCK_ASSIGNMENTS = m.MOCK_ASSIGNMENTS;
-    MOCK_PAYROLL_RECORDS = m.MOCK_PAYROLL_RECORDS;
-  } catch { /* mockData.js 미존재 시 빈 배열 유지 */ }
-}
+let USE_MOCK_DATA = false;
+// top-level await는 DOMContentLoaded보다 늦게 끝날 수 있으므로 Promise로 로드하고
+// DOMContentLoaded 핸들러에서 await 한다.
+const mockReady = import.meta.env.DEV
+  ? import(/* @vite-ignore */ '/src/mockData.js')
+      .then((m) => {
+        MOCK_PARTNERS = m.MOCK_PARTNERS;
+        MOCK_ASSIGNMENTS = m.MOCK_ASSIGNMENTS;
+        MOCK_PAYROLL_RECORDS = m.MOCK_PAYROLL_RECORDS;
+        USE_MOCK_DATA = MOCK_PARTNERS.length > 0;
+      })
+      .catch(() => { /* mockData.js 미존재 시 Supabase 모드 */ })
+  : Promise.resolve();
 
 // ─── 상태 ───
 let partners = [];
@@ -30,6 +36,7 @@ let uniCalMonth = new Date().getMonth();
 // ─── 초기화 ───
 document.addEventListener('DOMContentLoaded', async () => {
   setupAuthForms();
+  await mockReady;
   if (USE_MOCK_DATA) {
     showApp({ user: { email: 'mock@kjpartners.co.kr' } });
     return;
@@ -1357,6 +1364,8 @@ function renderPayrollAssignments(filtered) {
       const roleBonus = existing ? (existing.bonus || 0) : '';
       const fieldBonus = existing ? (existing.field_bonus || 0) : '';
       const total = existing ? existing.total_amount : 0;
+      const rowDeduction = Math.round(total * 0.033);
+      const rowNet = total - rowDeduction;
       const roleBonusLabel = isLeader ? '팀장수당' : '역할수당';
 
       return `
@@ -1398,7 +1407,10 @@ function renderPayrollAssignments(filtered) {
               <span class="text-xs text-gray-400">원</span>
             </div>
             <span class="text-gray-300">=</span>
-            <span class="payroll-row-total text-sm font-bold text-brand-700 w-28 text-right">${total ? '₩' + total.toLocaleString() : '₩0'}</span>
+            <div class="w-32 text-right">
+              <span class="payroll-row-total text-sm font-bold text-brand-700 block">${total ? '₩' + total.toLocaleString() : '₩0'}</span>
+              <span class="payroll-row-net text-[10px] text-emerald-600 block">실지급 ₩${rowNet.toLocaleString()} <span class="text-red-400">(-₩${rowDeduction.toLocaleString()})</span></span>
+            </div>
           </div>
         </div>`;
     }).join('');
@@ -1418,6 +1430,7 @@ function renderPayrollAssignments(filtered) {
           <div class="text-right">
             <p class="text-[10px] text-gray-400">배정 합계</p>
             <p class="payroll-card-total text-lg font-bold text-brand-800">${isSaved ? '₩' + savedTotal.toLocaleString() : '₩0'}</p>
+            <p class="payroll-card-net text-[10px] text-emerald-600">실지급 ₩${(savedTotal - Math.round(savedTotal * 0.033)).toLocaleString()}</p>
           </div>
         </div>
         <div class="bg-gray-50 rounded-lg p-3">
@@ -1441,7 +1454,12 @@ window.calcPayrollRow = function (input) {
   const roleBonus = parseFloat(row.querySelector('.payroll-bonus').value) || 0;
   const fieldBonus = parseFloat(row.querySelector('.payroll-field-bonus').value) || 0;
   const total = Math.round(rate * hours) + Math.round(roleBonus) + Math.round(fieldBonus);
+  const deduction = Math.round(total * 0.033);
   row.querySelector('.payroll-row-total').textContent = '₩' + total.toLocaleString();
+  const netEl = row.querySelector('.payroll-row-net');
+  if (netEl) {
+    netEl.innerHTML = `실지급 ₩${(total - deduction).toLocaleString()} <span class="text-red-400">(-₩${deduction.toLocaleString()})</span>`;
+  }
 
   const card = input.closest('.payroll-card');
   let cardTotal = 0;
@@ -1453,6 +1471,11 @@ window.calcPayrollRow = function (input) {
     cardTotal += Math.round(rt * hr) + Math.round(rb) + Math.round(fb);
   });
   card.querySelector('.payroll-card-total').textContent = '₩' + cardTotal.toLocaleString();
+  const cardNetEl = card.querySelector('.payroll-card-net');
+  if (cardNetEl) {
+    const cardDeduction = Math.round(cardTotal * 0.033);
+    cardNetEl.textContent = '실지급 ₩' + (cardTotal - cardDeduction).toLocaleString();
+  }
 };
 
 window.savePayrollForAssignment = async function (assignmentId) {
@@ -1538,6 +1561,11 @@ function renderPayrollDashboard() {
     : 0;
 
   document.getElementById('payroll-stat-total').textContent = '₩' + totalAmount.toLocaleString();
+  const netStatEl = document.getElementById('payroll-stat-net');
+  if (netStatEl) {
+    const totalDeduction = Math.round(totalAmount * 0.033);
+    netStatEl.textContent = '실지급 ₩' + (totalAmount - totalDeduction).toLocaleString();
+  }
   document.getElementById('payroll-stat-count').textContent = totalCount + '건';
   document.getElementById('payroll-stat-workers').textContent = uniqueWorkers + '명';
   document.getElementById('payroll-stat-avg-rate').textContent = '₩' + avgRate.toLocaleString();
@@ -1561,7 +1589,7 @@ function renderPayrollDashboard() {
     .sort((a, b) => b[1].totalAmount - a[1].totalAmount);
 
   if (entries.length === 0) {
-    tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-gray-400">해당 월의 급여 데이터가 없습니다</td></tr>';
+    tableBody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-400">해당 월의 급여 데이터가 없습니다</td></tr>';
     if (cardContainer) cardContainer.innerHTML = '<p class="text-center py-8 text-gray-400 text-sm">해당 월의 급여 데이터가 없습니다</p>';
     return;
   }
@@ -1570,6 +1598,8 @@ function renderPayrollDashboard() {
     const partner = partners.find(p => p.id === pid);
     const name = partner ? partner.name : '알 수 없음';
     const avgPartnerRate = Math.round(data.rates.reduce((s, r) => s + r, 0) / data.rates.length);
+    const deduction = Math.round(data.totalAmount * 0.033);
+    const netPay = data.totalAmount - deduction;
     return `
       <tr class="hover:bg-gray-50 transition-colors">
         <td class="py-3 px-3 font-medium text-gray-800">${esc(name)}</td>
@@ -1577,6 +1607,8 @@ function renderPayrollDashboard() {
         <td class="py-3 px-3 text-center text-gray-600">${data.totalHours}h</td>
         <td class="py-3 px-3 text-center text-gray-600">₩${avgPartnerRate.toLocaleString()}</td>
         <td class="py-3 px-3 text-right font-bold text-brand-700">₩${data.totalAmount.toLocaleString()}</td>
+        <td class="py-3 px-3 text-right text-red-500">-₩${deduction.toLocaleString()}</td>
+        <td class="py-3 px-3 text-right font-bold text-emerald-700">₩${netPay.toLocaleString()}</td>
       </tr>`;
   }).join('');
 
@@ -1586,6 +1618,8 @@ function renderPayrollDashboard() {
       const name = partner ? partner.name : '알 수 없음';
       const avgPartnerRate = Math.round(data.rates.reduce((s, r) => s + r, 0) / data.rates.length);
       const basePay = data.totalAmount - data.totalRoleBonus - data.totalFieldBonus;
+      const deduction = Math.round(data.totalAmount * 0.033);
+      const netPay = data.totalAmount - deduction;
       return `
         <div class="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
           <div class="flex items-center justify-between mb-2">
@@ -1619,6 +1653,14 @@ function renderPayrollDashboard() {
               <span class="text-blue-600">현장수당</span>
               <span class="font-semibold text-blue-700">₩${data.totalFieldBonus.toLocaleString()}</span>
             </div>` : ''}
+            <div class="flex justify-between bg-red-50 rounded-lg px-3 py-2">
+              <span class="text-red-500">공제액 (3.3%)</span>
+              <span class="font-semibold text-red-600">-₩${deduction.toLocaleString()}</span>
+            </div>
+            <div class="flex justify-between bg-emerald-50 rounded-lg px-3 py-2">
+              <span class="text-emerald-600">차인지급액</span>
+              <span class="font-semibold text-emerald-700">₩${netPay.toLocaleString()}</span>
+            </div>
           </div>
         </div>`;
     }).join('');

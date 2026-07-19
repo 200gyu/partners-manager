@@ -580,8 +580,8 @@
           </div>
         </div>
 
-        <!-- 파트너별 급여 명세 테이블 -->
-        <div class="overflow-x-auto">
+        <!-- 파트너별 급여 명세 테이블 (PC) -->
+        <div class="overflow-x-auto hidden sm:block">
           <table class="w-full text-sm">
             <thead>
               <tr class="border-b border-gray-200">
@@ -598,6 +598,10 @@
               </tr>
             </tbody>
           </table>
+        </div>
+        <!-- 파트너별 급여 명세 카드 (모바일) -->
+        <div id="payroll-stat-cards" class="sm:hidden space-y-3">
+          <p class="text-center py-8 text-gray-400 text-sm">월을 선택하면 통계가 표시됩니다</p>
         </div>
       </section>
     </main>

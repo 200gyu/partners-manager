@@ -1335,8 +1335,10 @@ function renderPayrollAssignments(filtered) {
       const existing = existingRecords.find(r => r.partner_id === id);
       const rate = existing ? existing.hourly_rate : '';
       const hours = existing ? existing.hours_worked : '';
-      const bonus = existing ? (existing.bonus || 0) : '';
+      const roleBonus = existing ? (existing.bonus || 0) : '';
+      const fieldBonus = existing ? (existing.field_bonus || 0) : '';
       const total = existing ? existing.total_amount : 0;
+      const roleBonusLabel = isLeader ? '팀장수당' : '역할수당';
 
       return `
         <div class="flex items-center gap-3 py-2 ${idx > 0 ? 'border-t border-gray-50' : ''}" data-worker-row data-partner-id="${id}" data-assignment-id="${a.id}">
@@ -1362,8 +1364,17 @@ function renderPayrollAssignments(filtered) {
             <span class="text-gray-300">+</span>
             <div class="flex items-center gap-1">
               <input type="number" class="payroll-bonus w-20 px-2 py-1.5 rounded-lg border border-gray-200 text-sm text-right
+                     focus:ring-2 focus:ring-brand-200 focus:border-brand-500 outline-none transition
+                     ${isLeader ? 'bg-amber-50 border-amber-200' : ''}"
+                placeholder="${roleBonusLabel}" min="0" step="1000" value="${roleBonus}"
+                oninput="calcPayrollRow(this)" />
+              <span class="text-xs text-gray-400">원</span>
+            </div>
+            <span class="text-gray-300">+</span>
+            <div class="flex items-center gap-1">
+              <input type="number" class="payroll-field-bonus w-20 px-2 py-1.5 rounded-lg border border-gray-200 text-sm text-right
                      focus:ring-2 focus:ring-brand-200 focus:border-brand-500 outline-none transition"
-                placeholder="기타수당" min="0" step="1000" value="${bonus}"
+                placeholder="현장수당" min="0" step="1000" value="${fieldBonus}"
                 oninput="calcPayrollRow(this)" />
               <span class="text-xs text-gray-400">원</span>
             </div>
@@ -1408,8 +1419,9 @@ window.calcPayrollRow = function (input) {
   const row = input.closest('[data-worker-row]');
   const rate = parseFloat(row.querySelector('.payroll-rate').value) || 0;
   const hours = parseFloat(row.querySelector('.payroll-hours').value) || 0;
-  const bonus = parseFloat(row.querySelector('.payroll-bonus').value) || 0;
-  const total = Math.round(rate * hours) + Math.round(bonus);
+  const roleBonus = parseFloat(row.querySelector('.payroll-bonus').value) || 0;
+  const fieldBonus = parseFloat(row.querySelector('.payroll-field-bonus').value) || 0;
+  const total = Math.round(rate * hours) + Math.round(roleBonus) + Math.round(fieldBonus);
   row.querySelector('.payroll-row-total').textContent = '₩' + total.toLocaleString();
 
   const card = input.closest('.payroll-card');
@@ -1417,8 +1429,9 @@ window.calcPayrollRow = function (input) {
   card.querySelectorAll('[data-worker-row]').forEach(r => {
     const rt = parseFloat(r.querySelector('.payroll-rate').value) || 0;
     const hr = parseFloat(r.querySelector('.payroll-hours').value) || 0;
-    const bn = parseFloat(r.querySelector('.payroll-bonus').value) || 0;
-    cardTotal += Math.round(rt * hr) + Math.round(bn);
+    const rb = parseFloat(r.querySelector('.payroll-bonus').value) || 0;
+    const fb = parseFloat(r.querySelector('.payroll-field-bonus').value) || 0;
+    cardTotal += Math.round(rt * hr) + Math.round(rb) + Math.round(fb);
   });
   card.querySelector('.payroll-card-total').textContent = '₩' + cardTotal.toLocaleString();
 };
@@ -1438,7 +1451,8 @@ window.savePayrollForAssignment = async function (assignmentId) {
     const partnerId = row.dataset.partnerId;
     const rate = parseFloat(row.querySelector('.payroll-rate').value);
     const hours = parseFloat(row.querySelector('.payroll-hours').value);
-    const bonus = parseFloat(row.querySelector('.payroll-bonus').value) || 0;
+    const roleBonus = parseFloat(row.querySelector('.payroll-bonus').value) || 0;
+    const fieldBonus = parseFloat(row.querySelector('.payroll-field-bonus').value) || 0;
 
     if (!rate || !hours) {
       hasError = true;
@@ -1450,8 +1464,9 @@ window.savePayrollForAssignment = async function (assignmentId) {
       partner_id: partnerId,
       hourly_rate: Math.round(rate),
       hours_worked: hours,
-      bonus: Math.round(bonus),
-      total_amount: Math.round(rate * hours) + Math.round(bonus),
+      bonus: Math.round(roleBonus),
+      field_bonus: Math.round(fieldBonus),
+      total_amount: Math.round(rate * hours) + Math.round(roleBonus) + Math.round(fieldBonus),
       work_date: assignment.assignment_date,
     });
   });
@@ -1511,20 +1526,24 @@ function renderPayrollDashboard() {
   const byPartner = {};
   monthRecords.forEach(r => {
     if (!byPartner[r.partner_id]) {
-      byPartner[r.partner_id] = { count: 0, totalHours: 0, totalAmount: 0, rates: [] };
+      byPartner[r.partner_id] = { count: 0, totalHours: 0, totalAmount: 0, totalRoleBonus: 0, totalFieldBonus: 0, rates: [] };
     }
     byPartner[r.partner_id].count++;
     byPartner[r.partner_id].totalHours += parseFloat(r.hours_worked);
     byPartner[r.partner_id].totalAmount += r.total_amount;
+    byPartner[r.partner_id].totalRoleBonus += (r.bonus || 0);
+    byPartner[r.partner_id].totalFieldBonus += (r.field_bonus || 0);
     byPartner[r.partner_id].rates.push(r.hourly_rate);
   });
 
   const tableBody = document.getElementById('payroll-stat-table');
+  const cardContainer = document.getElementById('payroll-stat-cards');
   const entries = Object.entries(byPartner)
     .sort((a, b) => b[1].totalAmount - a[1].totalAmount);
 
   if (entries.length === 0) {
     tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-gray-400">해당 월의 급여 데이터가 없습니다</td></tr>';
+    if (cardContainer) cardContainer.innerHTML = '<p class="text-center py-8 text-gray-400 text-sm">해당 월의 급여 데이터가 없습니다</p>';
     return;
   }
 
@@ -1541,4 +1560,48 @@ function renderPayrollDashboard() {
         <td class="py-3 px-3 text-right font-bold text-brand-700">₩${data.totalAmount.toLocaleString()}</td>
       </tr>`;
   }).join('');
+
+  if (cardContainer) {
+    cardContainer.innerHTML = entries.map(([pid, data]) => {
+      const partner = partners.find(p => p.id === pid);
+      const name = partner ? partner.name : '알 수 없음';
+      const avgPartnerRate = Math.round(data.rates.reduce((s, r) => s + r, 0) / data.rates.length);
+      const basePay = data.totalAmount - data.totalRoleBonus - data.totalFieldBonus;
+      return `
+        <div class="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-bold text-gray-800">${esc(name)}</span>
+            <span class="text-base font-bold text-brand-700">₩${data.totalAmount.toLocaleString()}</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="flex justify-between bg-gray-50 rounded-lg px-3 py-2">
+              <span class="text-gray-500">근무 건수</span>
+              <span class="font-semibold text-gray-700">${data.count}건</span>
+            </div>
+            <div class="flex justify-between bg-gray-50 rounded-lg px-3 py-2">
+              <span class="text-gray-500">총 근무시간</span>
+              <span class="font-semibold text-gray-700">${data.totalHours}h</span>
+            </div>
+            <div class="flex justify-between bg-gray-50 rounded-lg px-3 py-2">
+              <span class="text-gray-500">평균 시급</span>
+              <span class="font-semibold text-gray-700">₩${avgPartnerRate.toLocaleString()}</span>
+            </div>
+            <div class="flex justify-between bg-gray-50 rounded-lg px-3 py-2">
+              <span class="text-gray-500">기본급</span>
+              <span class="font-semibold text-gray-700">₩${basePay.toLocaleString()}</span>
+            </div>
+            ${data.totalRoleBonus > 0 ? `
+            <div class="flex justify-between bg-amber-50 rounded-lg px-3 py-2">
+              <span class="text-amber-600">역할수당</span>
+              <span class="font-semibold text-amber-700">₩${data.totalRoleBonus.toLocaleString()}</span>
+            </div>` : ''}
+            ${data.totalFieldBonus > 0 ? `
+            <div class="flex justify-between bg-blue-50 rounded-lg px-3 py-2">
+              <span class="text-blue-600">현장수당</span>
+              <span class="font-semibold text-blue-700">₩${data.totalFieldBonus.toLocaleString()}</span>
+            </div>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+  }
 }

@@ -12,6 +12,8 @@ let dayOffs = [];
 let dayoffCalYear = new Date().getFullYear();
 let dayoffCalMonth = new Date().getMonth();
 let payrollRecords = [];
+let uniCalYear = new Date().getFullYear();
+let uniCalMonth = new Date().getMonth();
 
 // ─── 초기화 ───
 document.addEventListener('DOMContentLoaded', async () => {
@@ -151,8 +153,12 @@ function setupTabs() {
       document.getElementById('panel-partners').classList.toggle('hidden', currentTab !== 'partners');
       document.getElementById('panel-assignments').classList.toggle('hidden', currentTab !== 'assignments');
       document.getElementById('panel-payroll').classList.toggle('hidden', currentTab !== 'payroll');
+      document.getElementById('panel-schedule').classList.toggle('hidden', currentTab !== 'schedule');
       if (currentTab === 'payroll') {
         initPayrollPanel();
+      }
+      if (currentTab === 'schedule') {
+        renderUnifiedCalendar();
       }
     });
   });
@@ -1012,6 +1018,144 @@ function renderDayOffCalendar() {
           : `${name} 휴무 (${d.start_date} ~ ${d.end_date})`;
         html += `<div class="dayoff-entry cursor-pointer" title="${esc(tooltip)}" onclick="deleteDayOff('${d.id}')">${esc(name)}</div>`;
       });
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+  }
+
+  gridEl.innerHTML = html;
+}
+
+// ═══════════════════════════════════════
+//  통합 달력 (일정 관리)
+// ═══════════════════════════════════════
+
+window.uniCalPrev = function () {
+  uniCalMonth--;
+  if (uniCalMonth < 0) { uniCalMonth = 11; uniCalYear--; }
+  renderUnifiedCalendar();
+};
+
+window.uniCalNext = function () {
+  uniCalMonth++;
+  if (uniCalMonth > 11) { uniCalMonth = 0; uniCalYear++; }
+  renderUnifiedCalendar();
+};
+
+window.uniCalToday = function () {
+  const now = new Date();
+  uniCalYear = now.getFullYear();
+  uniCalMonth = now.getMonth();
+  renderUnifiedCalendar();
+};
+
+window.showDayOffDetail = function (dayOffId) {
+  const d = dayOffs.find(x => x.id === dayOffId);
+  if (!d) return;
+  const partner = partners.find(p => p.id === d.partner_id);
+  const name = partner ? partner.name : '알 수 없음';
+  const reason = d.reason ? d.reason : '사유 없음';
+  alert(`🗓️ 휴무 상세\n\n파트너: ${name}\n기간: ${d.start_date} ~ ${d.end_date}\n사유: ${reason}`);
+};
+
+function renderUnifiedCalendar() {
+  const titleEl = document.getElementById('unified-cal-title');
+  const gridEl = document.getElementById('unified-calendar-grid');
+  if (!titleEl || !gridEl) return;
+
+  titleEl.textContent = `${uniCalYear}년 ${uniCalMonth + 1}월`;
+
+  const dayOffByDate = {};
+  dayOffs.forEach(d => {
+    const start = new Date(d.start_date + 'T00:00:00');
+    const end = new Date(d.end_date + 'T00:00:00');
+    for (let cur = new Date(start); cur <= end; cur.setDate(cur.getDate() + 1)) {
+      const dateStr = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
+      if (!dayOffByDate[dateStr]) dayOffByDate[dateStr] = [];
+      dayOffByDate[dateStr].push(d);
+    }
+  });
+
+  const assignByDate = {};
+  assignments.forEach(a => {
+    const d = a.assignment_date;
+    if (!d) return;
+    if (!assignByDate[d]) assignByDate[d] = [];
+    assignByDate[d].push(a);
+  });
+
+  const firstDay = new Date(uniCalYear, uniCalMonth, 1).getDay();
+  const daysInMonth = new Date(uniCalYear, uniCalMonth + 1, 0).getDate();
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+  const totalCells = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+  let html = '';
+
+  for (let i = 0; i < totalCells; i++) {
+    const dayNum = i - firstDay + 1;
+    const isCurrentMonth = dayNum >= 1 && dayNum <= daysInMonth;
+    const dateStr = isCurrentMonth
+      ? `${uniCalYear}-${String(uniCalMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
+      : '';
+    const isToday = dateStr === todayStr;
+    const dayOfWeek = i % 7;
+    const isSunday = dayOfWeek === 0;
+    const isSaturday = dayOfWeek === 6;
+
+    const dayOffEntries = isCurrentMonth && dayOffByDate[dateStr] ? dayOffByDate[dateStr] : [];
+    const assignEntries = isCurrentMonth && assignByDate[dateStr] ? assignByDate[dateStr] : [];
+    const totalEntries = dayOffEntries.length + assignEntries.length;
+
+    const cellBg = isCurrentMonth ? (isToday ? 'bg-brand-50' : 'bg-white') : 'bg-gray-50';
+
+    html += `<div class="cal-cell ${cellBg} p-1 flex flex-col">`;
+
+    if (isCurrentMonth) {
+      const dayColor = isSunday ? 'text-red-500' : isSaturday ? 'text-blue-500' : 'text-gray-700';
+      const todayRing = isToday ? 'bg-brand-700 text-white rounded-full w-6 h-6 flex items-center justify-center' : '';
+      html += `<div class="text-xs font-semibold ${dayColor} mb-0.5 flex items-center justify-between">`;
+      html += todayRing
+        ? `<span class="${todayRing}">${dayNum}</span>`
+        : `<span>${dayNum}</span>`;
+      if (totalEntries > 0) {
+        html += `<span class="text-[9px] font-normal text-gray-400">${totalEntries}건</span>`;
+      }
+      html += `</div>`;
+
+      html += `<div class="flex-1 overflow-y-auto space-y-px" style="max-height:90px;">`;
+
+      const seenDayOff = new Set();
+      dayOffEntries.forEach(d => {
+        if (seenDayOff.has(d.id)) return;
+        seenDayOff.add(d.id);
+        const partner = partners.find(p => p.id === d.partner_id);
+        const name = partner ? partner.name : '?';
+        const tooltip = d.reason
+          ? `[휴무] ${name} (${d.start_date} ~ ${d.end_date}) — ${d.reason}`
+          : `[휴무] ${name} (${d.start_date} ~ ${d.end_date})`;
+        html += `<div class="dayoff-entry cursor-pointer" title="${esc(tooltip)}" onclick="showDayOffDetail('${d.id}')">[휴무] ${esc(name)}</div>`;
+      });
+
+      assignEntries.forEach(a => {
+        const leaderName = a.leader ? a.leader.name : '?';
+        const region = extractRegion(a.client_address);
+        const label = `[${a.status}] ${a.client_name}${region ? ' - ' + region : ''}`;
+        const statusStyles = {
+          '대기': 'bg-amber-50 text-amber-800 border-l-2 border-amber-400',
+          '완료': 'bg-blue-50 text-blue-800 border-l-2 border-blue-400',
+          '종료': 'bg-gray-100 text-gray-500 border-l-2 border-gray-300',
+        };
+        const style = statusStyles[a.status] || 'bg-gray-50 text-gray-600';
+        const memberNames = getMemberNames(a.member_ids);
+        const memberCount = (a.member_ids || []).length;
+        const tooltip = memberCount > 0
+          ? `[${a.status}] ${a.client_name} / 팀장: ${leaderName} / 팀원: ${memberNames.join(', ')}`
+          : `[${a.status}] ${a.client_name} / 담당: ${leaderName}`;
+        html += `<div class="cal-entry ${style}" title="${esc(tooltip)}" onclick="openAssignmentModal('${a.id}')">${esc(label)}</div>`;
+      });
+
       html += `</div>`;
     }
 

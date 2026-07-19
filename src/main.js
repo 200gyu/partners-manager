@@ -1,5 +1,9 @@
 import { supabase } from './supabase.js';
 import { getSession, onAuthStateChange, signIn, signUp, signOut } from './auth.js';
+import { MOCK_PARTNERS, MOCK_ASSIGNMENTS, MOCK_PAYROLL_RECORDS } from './mockData.js';
+
+// ─── Mock Data 모드 ───
+const USE_MOCK_DATA = true;
 
 // ─── 상태 ───
 let partners = [];
@@ -18,6 +22,10 @@ let uniCalMonth = new Date().getMonth();
 // ─── 초기화 ───
 document.addEventListener('DOMContentLoaded', async () => {
   setupAuthForms();
+  if (USE_MOCK_DATA) {
+    showApp({ user: { email: 'mock@kjpartners.co.kr' } });
+    return;
+  }
   const session = await getSession();
   if (session) {
     showApp(session);
@@ -227,16 +235,16 @@ function updateDashboard() {
 // ═══════════════════════════════════════
 
 async function loadPartners() {
-  const { data, error } = await supabase
-    .from('partners')
-    .select('*')
-    .order('name', { ascending: true });
-
-  if (error) {
-    showToast('파트너 목록 로딩 실패: ' + error.message, 'error');
-    return;
+  if (USE_MOCK_DATA) {
+    partners = MOCK_PARTNERS.map(p => ({ ...p, phone: '', created_at: '2026-07-01T00:00:00Z' }));
+  } else {
+    const { data, error } = await supabase
+      .from('partners')
+      .select('*')
+      .order('name', { ascending: true });
+    if (error) { showToast('파트너 목록 로딩 실패: ' + error.message, 'error'); return; }
+    partners = data || [];
   }
-  partners = data || [];
   renderPartners();
   populateTeamSelect();
   populateDayOffSelect();
@@ -434,16 +442,19 @@ window.cancelPartnerEdit = function () {
 // ═══════════════════════════════════════
 
 async function loadAssignments() {
-  const { data, error } = await supabase
-    .from('assignments')
-    .select('*, leader:partners!leader_id(name, region)')
-    .order('assignment_date', { ascending: false });
-
-  if (error) {
-    showToast('배정 목록 로딩 실패: ' + error.message, 'error');
-    return;
+  if (USE_MOCK_DATA) {
+    assignments = MOCK_ASSIGNMENTS.map(a => {
+      const leaderP = partners.find(p => p.id === a.leader_id);
+      return { ...a, leader: leaderP ? { name: leaderP.name, region: leaderP.region } : null };
+    });
+  } else {
+    const { data, error } = await supabase
+      .from('assignments')
+      .select('*, leader:partners!leader_id(name, region)')
+      .order('assignment_date', { ascending: false });
+    if (error) { showToast('배정 목록 로딩 실패: ' + error.message, 'error'); return; }
+    assignments = data || [];
   }
-  assignments = data || [];
   renderAssignments();
   if (assignmentView === 'calendar') renderCalendar();
   updateDashboard();
@@ -860,16 +871,16 @@ function populateDayOffSelect() {
 }
 
 async function loadDayOffs() {
-  const { data, error } = await supabase
-    .from('partner_day_offs')
-    .select('*')
-    .order('start_date', { ascending: true });
-
-  if (error) {
-    showToast('휴무일 로딩 실패: ' + error.message, 'error');
-    return;
+  if (USE_MOCK_DATA) {
+    dayOffs = [];
+  } else {
+    const { data, error } = await supabase
+      .from('partner_day_offs')
+      .select('*')
+      .order('start_date', { ascending: true });
+    if (error) { showToast('휴무일 로딩 실패: ' + error.message, 'error'); return; }
+    dayOffs = data || [];
   }
-  dayOffs = data || [];
   renderDayOffCalendar();
 }
 
@@ -1276,16 +1287,16 @@ function populatePayrollMonthSelect() {
 }
 
 async function loadPayrollRecords() {
-  const { data, error } = await supabase
-    .from('payroll_records')
-    .select('*')
-    .order('work_date', { ascending: false });
-
-  if (error) {
-    showToast('급여 데이터 로딩 실패: ' + error.message, 'error');
-    return;
+  if (USE_MOCK_DATA) {
+    payrollRecords = [...MOCK_PAYROLL_RECORDS];
+  } else {
+    const { data, error } = await supabase
+      .from('payroll_records')
+      .select('*')
+      .order('work_date', { ascending: false });
+    if (error) { showToast('급여 데이터 로딩 실패: ' + error.message, 'error'); return; }
+    payrollRecords = data || [];
   }
-  payrollRecords = data || [];
 }
 
 function searchPayrollAssignments() {

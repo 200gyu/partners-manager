@@ -257,12 +257,25 @@
                      focus:ring-2 focus:ring-brand-200 focus:border-brand-500 outline-none transition"
               placeholder="정리수납" value="정리수납" />
           </div>
-          <div class="sm:col-span-2 lg:col-span-4">
+          <div class="sm:col-span-2 lg:col-span-4 flex flex-wrap items-center gap-2">
             <button type="submit"
-              class="w-full sm:w-auto px-6 py-2.5 bg-brand-700 text-white text-sm font-semibold
+              class="px-6 py-2.5 bg-brand-700 text-white text-sm font-semibold
                      rounded-xl hover:bg-brand-800 active:scale-[0.98] transition-all">
               + 파트너 등록
             </button>
+            <span class="text-gray-300">|</span>
+            <button type="button" id="partner-template-btn"
+              class="px-4 py-2.5 text-sm font-medium text-emerald-700 border border-emerald-200
+                     rounded-xl hover:bg-emerald-50 transition-all">
+              📄 엑셀 양식 받기
+            </button>
+            <button type="button" id="partner-import-btn"
+              class="px-4 py-2.5 text-sm font-medium text-emerald-700 border border-emerald-200
+                     rounded-xl hover:bg-emerald-50 transition-all">
+              📤 엑셀 대량 등록
+            </button>
+            <input type="file" id="partner-import-file" accept=".xlsx,.xls" class="hidden" />
+            <span id="partner-import-status" class="text-xs text-gray-500"></span>
           </div>
         </form>
       </section>
@@ -557,6 +570,11 @@
               class="px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600
                      focus:ring-2 focus:ring-brand-200 focus:border-brand-500 outline-none">
             </select>
+            <button id="payroll-export-btn" type="button"
+              class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold
+                     hover:bg-emerald-700 active:scale-[0.98] transition-all whitespace-nowrap">
+              📥 엑셀 다운로드
+            </button>
           </div>
         </div>
 

@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js';
 import { getSession, onAuthStateChange, signIn, signUp, signOut } from './auth.js';
+import { exportPayroll, downloadPartnerTemplate, parsePartnerFile } from './excel.js';
 
 // ─── Mock Data 모드 ───
 // 로컬 개발(vite dev)에서만 활성화. mockData.js는 실명 포함으로 gitignore 처리되어
@@ -147,6 +148,7 @@ function showApp(session) {
   setupForms();
   setupDayOffForm();
   setupPayrollEvents();
+  setupExcelEvents();
   loadPartners();
   loadAssignments();
   loadDayOffs();
@@ -223,6 +225,75 @@ function setupPartnerSearch() {
   searchInput.addEventListener('input', () => {
     renderPartners(searchInput.value.trim());
   });
+}
+
+// ─── 엑셀 내보내기/가져오기 ───
+function setupExcelEvents() {
+  // 급여 명세 다운로드 (현재 선택된 월)
+  const exportBtn = document.getElementById('payroll-export-btn');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', async () => {
+      const month = document.getElementById('payroll-stat-month')?.value;
+      if (!month) { showToast('조회할 월을 먼저 선택하세요', 'error'); return; }
+      const monthRecords = payrollRecords.filter(
+        (r) => r.work_date && r.work_date.startsWith(month)
+      );
+      if (monthRecords.length === 0) { showToast('해당 월의 급여 데이터가 없습니다', 'error'); return; }
+      try {
+        await exportPayroll(month, monthRecords, partners);
+        showToast(`${month} 급여 명세를 다운로드했습니다`);
+      } catch (err) {
+        showToast('엑셀 생성 실패: ' + err.message, 'error');
+      }
+    });
+  }
+
+  // 파트너 양식 다운로드
+  const tplBtn = document.getElementById('partner-template-btn');
+  if (tplBtn) {
+    tplBtn.addEventListener('click', async () => {
+      try { await downloadPartnerTemplate(); } catch (err) { showToast('양식 생성 실패: ' + err.message, 'error'); }
+    });
+  }
+
+  // 파트너 대량 등록 (파일 선택 → 파싱 → insert)
+  const importBtn = document.getElementById('partner-import-btn');
+  const fileInput = document.getElementById('partner-import-file');
+  const status = document.getElementById('partner-import-status');
+  if (importBtn && fileInput) {
+    importBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      if (status) status.textContent = '파일 읽는 중…';
+      try {
+        const rows = await parsePartnerFile(file);
+        if (rows.length === 0) {
+          showToast('등록할 파트너가 없습니다. 양식을 확인하세요', 'error');
+          if (status) status.textContent = '';
+          return;
+        }
+        const { error } = await supabase.from('partners').insert(
+          rows.map((r) => ({
+            name: r.name, phone: r.phone || '', region: r.region || '', specialty: r.specialty || '정리수납',
+          }))
+        );
+        if (error) {
+          showToast('대량 등록 실패: ' + error.message, 'error');
+          if (status) status.textContent = '';
+          return;
+        }
+        showToast(`${rows.length}명의 파트너가 등록되었습니다`);
+        if (status) status.textContent = `✅ ${rows.length}명 등록 완료`;
+        await loadPartners();
+      } catch (err) {
+        showToast('엑셀 처리 실패: ' + err.message, 'error');
+        if (status) status.textContent = '';
+      } finally {
+        fileInput.value = '';
+      }
+    });
+  }
 }
 
 // ═══════════════════════════════════════

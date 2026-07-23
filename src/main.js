@@ -1902,9 +1902,10 @@ function renderPayrollDashboard() {
   const byPartner = {};
   monthRecords.forEach(r => {
     if (!byPartner[r.partner_id]) {
-      byPartner[r.partner_id] = { count: 0, totalHours: 0, totalAmount: 0, totalRoleBonus: 0, totalFieldBonus: 0, rates: [] };
+      byPartner[r.partner_id] = { count: 0, paid: 0, totalHours: 0, totalAmount: 0, totalRoleBonus: 0, totalFieldBonus: 0, rates: [] };
     }
     byPartner[r.partner_id].count++;
+    if (r.payment_status === '완료') byPartner[r.partner_id].paid++;
     byPartner[r.partner_id].totalHours += parseFloat(r.hours_worked);
     byPartner[r.partner_id].totalAmount += r.total_amount;
     byPartner[r.partner_id].totalRoleBonus += (r.bonus || 0);
@@ -1918,10 +1919,17 @@ function renderPayrollDashboard() {
     .sort((a, b) => b[1].totalAmount - a[1].totalAmount);
 
   if (entries.length === 0) {
-    tableBody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-400">해당 월의 급여 데이터가 없습니다</td></tr>';
+    tableBody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-gray-400">해당 월의 급여 데이터가 없습니다</td></tr>';
     if (cardContainer) cardContainer.innerHTML = '<p class="text-center py-8 text-gray-400 text-sm">해당 월의 급여 데이터가 없습니다</p>';
     return;
   }
+
+  // 지급 상태 계산 (완료/일부/예정)
+  const payStatus = (data) => {
+    if (data.paid >= data.count) return { label: '완료', cls: 'bg-emerald-100 text-emerald-700', target: '예정', btn: '예정으로' };
+    if (data.paid === 0) return { label: '예정', cls: 'bg-gray-100 text-gray-500', target: '완료', btn: '지급완료' };
+    return { label: `일부(${data.paid}/${data.count})`, cls: 'bg-amber-100 text-amber-700', target: '완료', btn: '전체완료' };
+  };
 
   tableBody.innerHTML = entries.map(([pid, data]) => {
     const partner = partners.find(p => p.id === pid);
@@ -1929,6 +1937,7 @@ function renderPayrollDashboard() {
     const avgPartnerRate = Math.round(data.rates.reduce((s, r) => s + r, 0) / data.rates.length);
     const deduction = Math.round(data.totalAmount * 0.033);
     const netPay = data.totalAmount - deduction;
+    const ps = payStatus(data);
     return `
       <tr class="hover:bg-gray-50 transition-colors">
         <td class="py-3 px-3 font-medium text-gray-800">${esc(name)}</td>
@@ -1938,6 +1947,11 @@ function renderPayrollDashboard() {
         <td class="py-3 px-3 text-right font-bold text-brand-700">₩${data.totalAmount.toLocaleString()}</td>
         <td class="py-3 px-3 text-right text-red-500">-₩${deduction.toLocaleString()}</td>
         <td class="py-3 px-3 text-right font-bold text-emerald-700">₩${netPay.toLocaleString()}</td>
+        <td class="py-3 px-3 text-center whitespace-nowrap">
+          <span class="text-[11px] px-2 py-0.5 rounded-full ${ps.cls}">${ps.label}</span>
+          <button onclick="togglePartnerPayment('${pid}','${selectedMonth}','${ps.target}')"
+            class="ml-1 text-[11px] px-2 py-0.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">${ps.btn}</button>
+        </td>
       </tr>`;
   }).join('');
 
@@ -1991,7 +2005,34 @@ function renderPayrollDashboard() {
               <span class="font-semibold text-emerald-700">₩${netPay.toLocaleString()}</span>
             </div>
           </div>
+          <div class="flex items-center justify-between mt-2">
+            <span class="text-[11px] px-2 py-0.5 rounded-full ${payStatus(data).cls}">${payStatus(data).label}</span>
+            <button onclick="togglePartnerPayment('${pid}','${selectedMonth}','${payStatus(data).target}')"
+              class="text-[11px] px-2 py-1 rounded-lg border border-gray-200 text-gray-600">${payStatus(data).btn}</button>
+          </div>
         </div>`;
     }).join('');
   }
 }
+
+// 파트너 당월 급여 지급 상태 토글 (관리자)
+window.togglePartnerPayment = async function (pid, month, target) {
+  if (USE_MOCK_DATA) {
+    payrollRecords.forEach((r) => {
+      if (r.partner_id === pid && r.work_date && r.work_date.startsWith(month)) r.payment_status = target;
+    });
+    showToast(`지급 상태를 '${target}'(으)로 변경 (데모)`);
+    renderPayrollDashboard();
+    return;
+  }
+  const { error } = await supabase
+    .from('payroll_records')
+    .update({ payment_status: target })
+    .eq('partner_id', pid)
+    .gte('work_date', `${month}-01`)
+    .lte('work_date', `${month}-31`);
+  if (error) { showToast('지급 상태 변경 실패: ' + error.message, 'error'); return; }
+  showToast(`지급 상태가 '${target}'(으)로 변경되었습니다`);
+  await loadPayrollRecords();
+  renderPayrollDashboard();
+};

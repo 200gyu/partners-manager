@@ -129,7 +129,10 @@ async function handleSignup(e) {
   try {
     const data = await signUp(email, password);
     if (data.user && !data.session) {
-      successEl.textContent = '확인 이메일이 전송되었습니다. 이메일을 확인해 주세요.';
+      successEl.textContent = '가입 요청 완료! 확인 이메일을 확인한 뒤, 관리자가 계정을 연결해 드리면 이용할 수 있습니다.';
+      successEl.classList.remove('hidden');
+    } else if (data.session) {
+      successEl.textContent = '가입되었습니다. 관리자 승인(계정 연결) 후 내 일정·급여가 표시됩니다.';
       successEl.classList.remove('hidden');
     }
   } catch (err) {
@@ -303,7 +306,7 @@ async function renderMyPage(session) {
   if (!pid) {
     document.getElementById('mypage-name').textContent = session.user.email;
     document.getElementById('mypage-meta').textContent =
-      '아직 파트너 정보와 연결되지 않은 계정입니다. 관리자에게 연결을 요청하세요.';
+      '가입이 완료되었습니다. 관리자가 정리수납사 정보와 연결하면 내 일정·급여·정산이 표시됩니다. (관리자에게 연결을 요청하세요)';
     return;
   }
 

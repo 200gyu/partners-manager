@@ -161,10 +161,10 @@ async function showApp(session) {
 // 로그인 계정의 역할·연결 파트너 조회. 실패(테이블 미생성 등) 시 null → 관리자 취급.
 async function fetchProfile(session) {
   if (USE_MOCK_DATA) {
-    // 로컬 테스트: ?role=partner 로 파트너 화면 시뮬레이션
+    // 로컬 테스트: ?role=manager(또는 partner/leader) 로 매니저 포털 시뮬레이션
     const params = new URLSearchParams(location.search);
     const simRole = params.get('role');
-    if (simRole === 'partner' || simRole === 'leader') {
+    if (['manager', 'partner', 'leader'].includes(simRole)) {
       const first = MOCK_PARTNERS[0];
       return { role: simRole, partner_id: first ? first.id : null };
     }
@@ -273,12 +273,25 @@ async function renderMyPage(session) {
     (b.assignment_date || '').localeCompare(a.assignment_date || '')
   );
   asEl.innerHTML = sorted.length
-    ? sorted.slice(0, 20).map((a) => `
+    ? sorted.slice(0, 20).map((a) => {
+        const when = `${esc(a.assignment_date)}${a.visit_time ? ' ' + esc(String(a.visit_time).slice(0, 5)) : ''}`;
+        const work = a.notes ? `<span class="block text-xs text-gray-400 mt-0.5">📝 ${esc(a.notes)}</span>` : '';
+        return `
         <div class="flex justify-between border-b border-gray-50 py-1.5">
-          <span>${esc(a.assignment_date)} · ${esc(a.client_name)} (${esc(a.client_address || '')})</span>
-          <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">${esc(a.status || '')}</span>
-        </div>`).join('')
+          <span>${when} · ${esc(a.client_name)} (${esc(a.client_address || '')})${work}</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 shrink-0">${esc(a.status || '')}</span>
+        </div>`;
+      }).join('')
     : '<p class="text-gray-400">배정 내역이 없습니다.</p>';
+
+  // 당월 급여 건별 지급 상태 요약 (payment_status 컬럼 있을 때만)
+  const paidCount = monthRec.filter((r) => r.payment_status === '완료').length;
+  const netEl = document.getElementById('mypage-net-note');
+  if (netEl) {
+    netEl.textContent = monthRec.length
+      ? `당월 ${monthRec.length}건 중 지급완료 ${paidCount}건 · 예정 ${monthRec.length - paidCount}건`
+      : '';
+  }
 
   // 내 휴무
   const doEl = document.getElementById('mypage-dayoffs');

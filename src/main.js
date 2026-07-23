@@ -694,6 +694,17 @@ async function handleAddAssignment(e) {
     return;
   }
 
+  // 이중 배정 검사 — 같은 날 다른 현장에 이미 배정된 파트너 경고 (실수 방지, 필요 시 override)
+  const doubleBooked = getDoubleBookedPartners(allTeamIds, assignment_date);
+  if (doubleBooked.length > 0) {
+    const detail = doubleBooked.map(d => `${d.name}(${d.site})`).join(', ');
+    if (!confirm(
+      `⚠️ 이중 배정 주의\n${assignment_date}에 이미 다른 현장에 배정된 파트너가 있습니다:\n\n${detail}\n\n그래도 배정하시겠습니까?`
+    )) {
+      return;
+    }
+  }
+
   const { error } = await supabase
     .from('assignments')
     .insert([{ leader_id, member_ids, client_name, client_address, assignment_date, notes }]);
@@ -1010,6 +1021,27 @@ function getConflictingPartners(partnerIds, dateStr) {
     if (isOff) {
       const partner = partners.find(p => p.id === pid);
       if (partner) results.push(partner);
+    }
+  }
+  return results;
+}
+
+// 같은 날짜에 이미 다른 배정(현장)에 포함된 파트너 찾기 (이중 배정 방지)
+// excludeAssignmentId: 수정 시 자기 자신 배정은 제외
+function getDoubleBookedPartners(partnerIds, dateStr, excludeAssignmentId = null) {
+  const idSet = new Set(partnerIds);
+  const results = [];
+  const seen = new Set();
+  for (const a of assignments) {
+    if (a.assignment_date !== dateStr) continue;
+    if (excludeAssignmentId && a.id === excludeAssignmentId) continue;
+    const assigned = [a.leader_id, ...(a.member_ids || [])];
+    for (const pid of assigned) {
+      if (idSet.has(pid) && !seen.has(pid)) {
+        seen.add(pid);
+        const partner = partners.find(p => p.id === pid);
+        results.push({ name: partner ? partner.name : '알 수 없음', site: a.client_name });
+      }
     }
   }
   return results;

@@ -195,7 +195,78 @@ function showAdminApp() {
   loadDayOffs();
   loadPayrollRecords();
   setupPartnerSearch();
+  setupManagerAdmin();
 }
+
+// ═══════════════════════════════════════
+//  매니저 계정 관리 (관리자 전용, RPC)
+// ═══════════════════════════════════════
+
+function populateManagerPartnerSelect() {
+  const sel = document.getElementById('manager-partner-select');
+  if (!sel) return;
+  sel.innerHTML =
+    '<option value="">정리수납사 선택…</option>' +
+    partners
+      .map((p) => `<option value="${p.id}">${esc(p.name)} (${esc(p.region || '')})</option>`)
+      .join('');
+}
+
+function setupManagerAdmin() {
+  const linkBtn = document.getElementById('manager-link-btn');
+  if (!linkBtn) return;
+
+  linkBtn.addEventListener('click', async () => {
+    const email = document.getElementById('manager-email').value.trim();
+    const partnerId = document.getElementById('manager-partner-select').value;
+    if (!email || !partnerId) { showToast('이메일과 정리수납사를 모두 선택하세요', 'error'); return; }
+    if (USE_MOCK_DATA) { showToast('데모 모드 — 운영에서 실제 연결됩니다'); return; }
+
+    const { data, error } = await supabase.rpc('link_manager', {
+      p_email: email, p_partner_id: partnerId,
+    });
+    if (error) { showToast('연결 실패: ' + error.message, 'error'); return; }
+    if (data === 'NO_USER') {
+      showToast('해당 이메일로 가입된 계정이 없습니다. 매니저가 먼저 가입해야 합니다.', 'error');
+      return;
+    }
+    showToast('매니저 계정이 연결되었습니다');
+    document.getElementById('manager-email').value = '';
+    loadManagerAccounts();
+  });
+
+  loadManagerAccounts();
+}
+
+async function loadManagerAccounts() {
+  const listEl = document.getElementById('manager-list');
+  if (!listEl) return;
+  if (USE_MOCK_DATA) {
+    listEl.innerHTML = '<p class="text-gray-400">데모 모드 — 운영에서 연결된 매니저 목록이 표시됩니다.</p>';
+    return;
+  }
+  const { data, error } = await supabase.rpc('list_manager_accounts');
+  if (error) {
+    listEl.innerHTML = `<p class="text-gray-400">목록을 불러오지 못했습니다 (${esc(error.message)}). v6·v7 마이그레이션 실행 여부를 확인하세요.</p>`;
+    return;
+  }
+  listEl.innerHTML = (data || []).length
+    ? data.map((m) => `
+        <div class="flex items-center justify-between border-b border-gray-50 py-1.5">
+          <span>👤 <b>${esc(m.partner_name || '(미연결)')}</b> · ${esc(m.email)} <span class="text-xs text-gray-400">(${esc(m.role)})</span></span>
+          <button onclick="unlinkManager('${m.uid}')"
+            class="text-xs px-2 py-1 rounded-lg text-red-600 border border-red-200 hover:bg-red-50">연결 해제</button>
+        </div>`).join('')
+    : '<p class="text-gray-400">연결된 매니저 계정이 없습니다.</p>';
+}
+
+window.unlinkManager = async function (uid) {
+  if (!confirm('이 매니저 계정 연결을 해제하시겠습니까? (일반 파트너로 되돌아갑니다)')) return;
+  const { error } = await supabase.rpc('unlink_manager', { p_uid: uid });
+  if (error) { showToast('해제 실패: ' + error.message, 'error'); return; }
+  showToast('연결이 해제되었습니다');
+  loadManagerAccounts();
+};
 
 function showPartnerApp(session) {
   // 관리자 UI 전부 숨기고 마이페이지만 노출
@@ -487,6 +558,7 @@ async function loadPartners() {
   renderPartners();
   populateTeamSelect();
   populateDayOffSelect();
+  populateManagerPartnerSelect();
   updateDashboard();
 }
 
@@ -833,6 +905,7 @@ async function handleAddAssignment(e) {
   const client_address = form.client_address.value.trim();
   const assignment_date = form.assignment_date.value;
   const notes = form.notes.value.trim();
+  const visit_time = form.visit_time?.value || null;
 
   if (!leader_id) {
     showToast('팀장을 선택하세요', 'error');
@@ -858,9 +931,9 @@ async function handleAddAssignment(e) {
     }
   }
 
-  const { error } = await supabase
-    .from('assignments')
-    .insert([{ leader_id, member_ids, client_name, client_address, assignment_date, notes }]);
+  const row = { leader_id, member_ids, client_name, client_address, assignment_date, notes };
+  if (visit_time) row.visit_time = visit_time; // v6 컬럼. 값 없으면 참조 안 함(마이그레이션 전 안전)
+  const { error } = await supabase.from('assignments').insert([row]);
 
   if (error) {
     showToast('배정 등록 실패: ' + error.message, 'error');

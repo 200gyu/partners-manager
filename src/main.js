@@ -33,6 +33,8 @@ let dayoffCalMonth = new Date().getMonth();
 let payrollRecords = [];
 let uniCalYear = new Date().getFullYear();
 let uniCalMonth = new Date().getMonth();
+let currentRole = 'admin';   // RBAC: admin | leader | partner
+let currentProfile = null;   // { role, partner_id }
 
 // ─── 초기화 ───
 document.addEventListener('DOMContentLoaded', async () => {
@@ -140,10 +142,49 @@ async function handleLogout() {
   }
 }
 
-function showApp(session) {
+async function showApp(session) {
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app-screen').classList.remove('hidden');
   document.getElementById('user-email').textContent = session.user.email;
+
+  // RBAC: 역할 조회 후 관리자/파트너 라우팅
+  currentProfile = await fetchProfile(session);
+  currentRole = currentProfile?.role || 'admin';
+
+  if (currentRole === 'admin') {
+    showAdminApp();
+  } else {
+    showPartnerApp(session);
+  }
+}
+
+// 로그인 계정의 역할·연결 파트너 조회. 실패(테이블 미생성 등) 시 null → 관리자 취급.
+async function fetchProfile(session) {
+  if (USE_MOCK_DATA) {
+    // 로컬 테스트: ?role=partner 로 파트너 화면 시뮬레이션
+    const params = new URLSearchParams(location.search);
+    const simRole = params.get('role');
+    if (simRole === 'partner' || simRole === 'leader') {
+      const first = MOCK_PARTNERS[0];
+      return { role: simRole, partner_id: first ? first.id : null };
+    }
+    return { role: 'admin', partner_id: null };
+  }
+  try {
+    const { data } = await supabase
+      .from('profiles')
+      .select('role, partner_id')
+      .eq('id', session.user.id)
+      .maybeSingle();
+    return data; // null이면 상위에서 admin fallback
+  } catch {
+    return null; // profiles 테이블 미생성(마이그레이션 전) → admin
+  }
+}
+
+function showAdminApp() {
+  document.getElementById('admin-nav').classList.remove('hidden');
+  document.getElementById('panel-mypage').classList.add('hidden');
   setupTabs();
   setupForms();
   setupDayOffForm();
@@ -156,11 +197,110 @@ function showApp(session) {
   setupPartnerSearch();
 }
 
+function showPartnerApp(session) {
+  // 관리자 UI 전부 숨기고 마이페이지만 노출
+  document.getElementById('admin-nav').classList.add('hidden');
+  ['panel-partners', 'panel-assignments', 'panel-payroll', 'panel-schedule'].forEach((id) => {
+    document.getElementById(id).classList.add('hidden');
+  });
+  document.getElementById('panel-mypage').classList.remove('hidden');
+  renderMyPage(session);
+}
+
 function showLogin() {
   document.getElementById('app-screen').classList.add('hidden');
   document.getElementById('login-screen').classList.remove('hidden');
   partners = [];
   assignments = [];
+}
+
+// ═══════════════════════════════════════
+//  파트너 마이페이지 (RBAC)
+// ═══════════════════════════════════════
+
+async function renderMyPage(session) {
+  const pid = currentProfile?.partner_id;
+  const monthStr = new Date().toISOString().slice(0, 7);
+  document.getElementById('mypage-month').textContent = monthStr;
+
+  if (!pid) {
+    document.getElementById('mypage-name').textContent = session.user.email;
+    document.getElementById('mypage-meta').textContent =
+      '아직 파트너 정보와 연결되지 않은 계정입니다. 관리자에게 연결을 요청하세요.';
+    return;
+  }
+
+  // 데이터 수집 (mock: 메모리 배열 / 운영: Supabase — RLS가 본인 것만 반환)
+  let me, myRecords, myAssigns, myDayoffs;
+  if (USE_MOCK_DATA) {
+    me = MOCK_PARTNERS.find((p) => p.id === pid);
+    myRecords = MOCK_PAYROLL_RECORDS.filter((r) => r.partner_id === pid);
+    myAssigns = MOCK_ASSIGNMENTS.filter(
+      (a) => a.leader_id === pid || (a.member_ids || []).includes(pid)
+    );
+    myDayoffs = [];
+  } else {
+    const [pRes, payRes, asRes, doRes] = await Promise.all([
+      supabase.from('partners').select('name, region, specialty').eq('id', pid).maybeSingle(),
+      supabase.from('payroll_records').select('*').eq('partner_id', pid),
+      supabase.from('assignments').select('*').or(`leader_id.eq.${pid}`),
+      supabase.from('partner_day_offs').select('*').eq('partner_id', pid),
+    ]);
+    me = pRes.data;
+    myRecords = payRes.data || [];
+    // 팀원 배열 포함 배정은 별도 필터 (or contains)
+    const memberAs = await supabase.from('assignments').select('*').contains('member_ids', [pid]);
+    myAssigns = [...(asRes.data || []), ...((memberAs.data) || [])];
+    myDayoffs = doRes.data || [];
+  }
+
+  document.getElementById('mypage-name').textContent = me ? me.name : session.user.email;
+  document.getElementById('mypage-meta').textContent = me
+    ? `${me.region || ''} · ${me.specialty || ''}`.trim()
+    : '';
+
+  // 이번 달 예상 급여
+  const monthRec = (myRecords || []).filter((r) => r.work_date && r.work_date.startsWith(monthStr));
+  const gross = monthRec.reduce((s, r) => s + (Number(r.total_amount) || 0), 0);
+  const deduction = Math.round(gross * 0.033);
+  document.getElementById('mypage-gross').textContent = '₩' + gross.toLocaleString();
+  document.getElementById('mypage-deduction').textContent = '-₩' + deduction.toLocaleString();
+  document.getElementById('mypage-net').textContent = '₩' + (gross - deduction).toLocaleString();
+
+  // 내 배정 (다가오는 순)
+  const asEl = document.getElementById('mypage-assignments');
+  const sorted = (myAssigns || []).slice().sort((a, b) =>
+    (b.assignment_date || '').localeCompare(a.assignment_date || '')
+  );
+  asEl.innerHTML = sorted.length
+    ? sorted.slice(0, 20).map((a) => `
+        <div class="flex justify-between border-b border-gray-50 py-1.5">
+          <span>${esc(a.assignment_date)} · ${esc(a.client_name)} (${esc(a.client_address || '')})</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">${esc(a.status || '')}</span>
+        </div>`).join('')
+    : '<p class="text-gray-400">배정 내역이 없습니다.</p>';
+
+  // 내 휴무
+  const doEl = document.getElementById('mypage-dayoffs');
+  doEl.innerHTML = (myDayoffs || []).length
+    ? myDayoffs.map((d) => `<div class="py-1">🛌 ${esc(d.start_date)} ~ ${esc(d.end_date)}</div>`).join('')
+    : '<p class="text-gray-400">신청한 휴무가 없습니다.</p>';
+
+  // 휴무 신청 폼
+  const form = document.getElementById('mypage-dayoff-form');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const start = document.getElementById('mypage-dayoff-start').value;
+    const end = document.getElementById('mypage-dayoff-end').value;
+    if (!start || !end || end < start) { showToast('날짜를 확인하세요', 'error'); return; }
+    if (USE_MOCK_DATA) { showToast('휴무 신청됨 (데모 모드)'); return; }
+    const { error } = await supabase
+      .from('partner_day_offs')
+      .insert([{ partner_id: pid, start_date: start, end_date: end }]);
+    if (error) { showToast('휴무 신청 실패: ' + error.message, 'error'); return; }
+    showToast('휴무가 신청되었습니다');
+    renderMyPage(session);
+  };
 }
 
 // ═══════════════════════════════════════

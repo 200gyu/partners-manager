@@ -36,7 +36,10 @@ let uniCalYear = new Date().getFullYear();
 let uniCalMonth = new Date().getMonth();
 let currentRole = 'admin';   // RBAC: admin | leader | partner | manager
 let currentProfile = null;   // { role, partner_id }
-let myAssignsCache = [];     // 매니저 포털 캘린더용 본인 배정 캐시
+let myAssignsCache = [];     // 매니저 포털 캘린더/상세용 본인 배정 캐시
+let myRecordsCache = [];     // 매니저 포털 급여 캐시
+let myPidCache = null;       // 로그인 매니저의 partner_id
+let myInfoCache = null;      // 로그인 매니저 정보(name/region)
 let myCalYear = new Date().getFullYear();
 let myCalMonth = new Date().getMonth();
 
@@ -296,7 +299,6 @@ function showLogin() {
 async function renderMyPage(session) {
   const pid = currentProfile?.partner_id;
   const monthStr = new Date().toISOString().slice(0, 7);
-  document.getElementById('mypage-month').textContent = monthStr;
 
   if (!pid) {
     document.getElementById('mypage-name').textContent = session.user.email;
@@ -334,55 +336,39 @@ async function renderMyPage(session) {
     ? `${me.region || ''} · ${me.specialty || ''}`.trim()
     : '';
 
-  // 이번 달 예상 급여
-  const monthRec = (myRecords || []).filter((r) => r.work_date && r.work_date.startsWith(monthStr));
-  const gross = monthRec.reduce((s, r) => s + (Number(r.total_amount) || 0), 0);
-  const deduction = Math.round(gross * 0.033);
-  document.getElementById('mypage-gross').textContent = '₩' + gross.toLocaleString();
-  document.getElementById('mypage-deduction').textContent = '-₩' + deduction.toLocaleString();
-  document.getElementById('mypage-net').textContent = '₩' + (gross - deduction).toLocaleString();
+  // 캐시 저장 (월 필터·상세·명세서용)
+  myRecordsCache = myRecords || [];
+  myAssignsCache = myAssigns || [];
+  myPidCache = pid;
+  myInfoCache = me;
 
-  // 내 배정 (다가오는 순)
-  const asEl = document.getElementById('mypage-assignments');
-  const sorted = (myAssigns || []).slice().sort((a, b) =>
-    (b.assignment_date || '').localeCompare(a.assignment_date || '')
-  );
-  asEl.innerHTML = sorted.length
-    ? sorted.slice(0, 20).map((a) => {
-        const when = `${esc(a.assignment_date)}${a.visit_time ? ' ' + esc(String(a.visit_time).slice(0, 5)) : ''}`;
-        const work = a.notes ? `<span class="block text-xs text-gray-400 mt-0.5">📝 ${esc(a.notes)}</span>` : '';
-        return `
-        <div class="flex justify-between border-b border-gray-50 py-1.5">
-          <span>${when} · ${esc(a.client_name)} (${esc(a.client_address || '')})${work}</span>
-          <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 shrink-0">${esc(a.status || '')}</span>
-        </div>`;
-      }).join('')
-    : '<p class="text-gray-400">배정 내역이 없습니다.</p>';
-
-  // 당월 급여 건별 지급 상태 요약 (payment_status 컬럼 있을 때만)
-  const paidCount = monthRec.filter((r) => r.payment_status === '완료').length;
-  const netEl = document.getElementById('mypage-net-note');
-  if (netEl) {
-    netEl.textContent = monthRec.length
-      ? `당월 ${monthRec.length}건 중 지급완료 ${paidCount}건 · 예정 ${monthRec.length - paidCount}건`
-      : '';
+  // 월 선택 옵션 (급여가 있는 월 + 이번 달), 최신월 우선
+  const monthSel = document.getElementById('mypage-month-select');
+  if (monthSel) {
+    const months = new Set(myRecordsCache.map((r) => String(r.work_date || '').slice(0, 7)).filter(Boolean));
+    months.add(monthStr);
+    const opts = [...months].sort((a, b) => b.localeCompare(a));
+    monthSel.innerHTML = opts.map((m) => `<option value="${m}">${m}</option>`).join('');
+    monthSel.value = opts.includes(monthStr) ? monthStr : opts[0];
+    monthSel.onchange = renderMyPageMonth;
   }
+  renderMyPageMonth();
 
-  // 월간 수익 추이 (본인)
+  // 월간 수익 추이 (전체 기간)
   const trendEl = document.getElementById('mypage-trend');
-  if (trendEl) trendEl.innerHTML = monthlyTrendSvg(monthlyTotals(myRecords || []));
+  if (trendEl) trendEl.innerHTML = monthlyTrendSvg(monthlyTotals(myRecordsCache));
 
-  // 급여명세서 (본인) — 인쇄용
+  // 급여명세서 (선택 월) — 인쇄용
   const payslipBtn = document.getElementById('mypage-payslip-btn');
   if (payslipBtn) {
     payslipBtn.onclick = () => {
-      const ok = printPayslip(buildPayslip(pid, monthStr, myRecords || [], myAssigns || [], me));
+      const m = document.getElementById('mypage-month-select')?.value || monthStr;
+      const ok = printPayslip(buildPayslip(myPidCache, m, myRecordsCache, myAssignsCache, myInfoCache));
       if (!ok) showToast('팝업이 차단되었습니다. 팝업을 허용한 뒤 다시 시도하세요.', 'error');
     };
   }
 
   // 방문 일정 캘린더 (본인 배정)
-  myAssignsCache = myAssigns || [];
   const now = new Date();
   myCalYear = now.getFullYear();
   myCalMonth = now.getMonth();
@@ -415,6 +401,94 @@ async function renderMyPage(session) {
   };
 }
 
+// 매니저 포털: 선택한 월의 정산 요약 + 급여 건별 + 배정 목록 렌더
+function renderMyPageMonth() {
+  const month = document.getElementById('mypage-month-select')?.value
+    || new Date().toISOString().slice(0, 7);
+
+  const monthRec = myRecordsCache.filter((r) => r.work_date && r.work_date.startsWith(month));
+  const gross = monthRec.reduce((s, r) => s + (Number(r.total_amount) || 0), 0);
+  const deduction = Math.round(gross * 0.033);
+  document.getElementById('mypage-gross').textContent = '₩' + gross.toLocaleString();
+  document.getElementById('mypage-deduction').textContent = '-₩' + deduction.toLocaleString();
+  document.getElementById('mypage-net').textContent = '₩' + (gross - deduction).toLocaleString();
+
+  const paidCount = monthRec.filter((r) => r.payment_status === '완료').length;
+  const netEl = document.getElementById('mypage-net-note');
+  if (netEl) {
+    netEl.textContent = monthRec.length
+      ? `${month} · 총 ${monthRec.length}건 (지급완료 ${paidCount} · 예정 ${monthRec.length - paidCount})`
+      : '해당 월 급여 내역이 없습니다';
+  }
+
+  // 급여 건별 리스트
+  const payEl = document.getElementById('mypage-payroll-list');
+  if (payEl) {
+    const rows = monthRec.slice().sort((a, b) => (a.work_date || '').localeCompare(b.work_date || ''));
+    payEl.innerHTML = rows.length
+      ? rows.map((r) => {
+          const a = myAssignsCache.find((x) => x.id === r.assignment_id);
+          const paid = r.payment_status === '완료';
+          const badge = paid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700';
+          return `
+            <div class="flex items-center justify-between border-b border-gray-50 py-2">
+              <div class="min-w-0">
+                <span class="text-gray-700">${esc(r.work_date)} · ${esc(a ? a.client_name : '-')}</span>
+                <span class="block text-[11px] text-gray-400">${r.hours_worked}h · 시급 ₩${(Number(r.hourly_rate) || 0).toLocaleString()}</span>
+              </div>
+              <div class="text-right shrink-0 pl-2">
+                <span class="font-semibold text-brand-700">₩${(Number(r.total_amount) || 0).toLocaleString()}</span>
+                <span class="ml-1 text-[10px] px-1.5 py-0.5 rounded-full ${badge}">${paid ? '지급완료' : '예정'}</span>
+              </div>
+            </div>`;
+        }).join('')
+      : '<p class="text-gray-400">해당 월 급여 내역이 없습니다.</p>';
+  }
+
+  // 내 배정 목록 (선택 월) — 클릭 시 상세
+  const asEl = document.getElementById('mypage-assignments');
+  if (asEl) {
+    const monthAssigns = myAssignsCache
+      .filter((a) => String(a.assignment_date || '').startsWith(month))
+      .sort((a, b) => (a.assignment_date || '').localeCompare(b.assignment_date || ''));
+    asEl.innerHTML = monthAssigns.length
+      ? monthAssigns.map((a) => {
+          const when = `${esc(a.assignment_date)}${a.visit_time ? ' ' + esc(String(a.visit_time).slice(0, 5)) : ''}`;
+          return `
+            <button type="button" onclick="showMyAssignmentDetail('${a.id}')"
+              class="w-full text-left flex justify-between items-center gap-2 border-b border-gray-50 py-2 hover:bg-gray-50 rounded px-1">
+              <span class="text-gray-700 min-w-0 truncate">📍 ${when} · ${esc(a.client_name)} <span class="text-gray-400">(${esc(a.client_address || '')})</span></span>
+              <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 shrink-0">${esc(a.status || '')}</span>
+            </button>`;
+        }).join('')
+      : '<p class="text-gray-400">해당 월 배정이 없습니다.</p>';
+  }
+}
+
+// 매니저 포털: 배정 상세 모달
+window.showMyAssignmentDetail = function (id) {
+  const a = myAssignsCache.find((x) => x.id === id);
+  if (!a) return;
+  const title = document.getElementById('mypage-detail-title');
+  const body = document.getElementById('mypage-detail-body');
+  if (title) title.textContent = a.client_name || '방문 상세';
+  if (body) {
+    const when = `${esc(a.assignment_date)}${a.visit_time ? ' ' + esc(String(a.visit_time).slice(0, 5)) : ''}`;
+    body.innerHTML = `
+      <div class="space-y-2.5 text-sm">
+        <div class="flex"><span class="text-gray-400 w-20 shrink-0">방문 일시</span><b class="text-gray-800">${when}</b></div>
+        <div class="flex"><span class="text-gray-400 w-20 shrink-0">고객명</span><span class="text-gray-800">${esc(a.client_name)}</span></div>
+        <div class="flex"><span class="text-gray-400 w-20 shrink-0">주소</span><span class="text-gray-800">${esc(a.client_address || '-')}</span></div>
+        <div class="flex"><span class="text-gray-400 w-20 shrink-0">진행 상태</span><span class="text-gray-800">${esc(a.status || '-')}</span></div>
+        <div class="flex"><span class="text-gray-400 w-20 shrink-0">작업 상세</span><span class="text-gray-800 whitespace-pre-wrap">${esc(a.notes || '-')}</span></div>
+      </div>`;
+  }
+  document.getElementById('mypage-detail-modal').classList.remove('hidden');
+};
+window.closeMyDetail = function () {
+  document.getElementById('mypage-detail-modal').classList.add('hidden');
+};
+
 // 매니저 포털: 본인 방문 일정 월간 캘린더
 function renderManagerCalendar() {
   const grid = document.getElementById('mypage-calendar');
@@ -446,7 +520,8 @@ function renderManagerCalendar() {
     const ds = `${myCalYear}-${String(myCalMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const entries = (byDate[ds] || []).map((a) => {
       const t = a.visit_time ? String(a.visit_time).slice(0, 5) + ' ' : '';
-      return `<div class="${statusCls[a.status] || 'bg-gray-50'} rounded px-1 py-0.5 mb-0.5 truncate"
+      return `<div onclick="showMyAssignmentDetail('${a.id}')"
+        class="${statusCls[a.status] || 'bg-gray-50'} rounded px-1 py-0.5 mb-0.5 truncate cursor-pointer"
         title="${esc(t + a.client_name + ' ' + (a.client_address || ''))}">${esc(t + a.client_name)}</div>`;
     }).join('');
     html += `<div class="bg-white min-h-[70px] p-1"><div class="text-[10px] text-gray-400 mb-0.5">${day}</div>${entries}</div>`;

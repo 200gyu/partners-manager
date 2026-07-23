@@ -724,30 +724,37 @@
 
       <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
         <div class="flex items-center justify-between mb-3">
-          <h3 class="text-base font-bold text-gray-700">💰 당월 정산 수익</h3>
+          <h3 class="text-base font-bold text-gray-700">💰 월 정산 수익</h3>
           <div class="flex items-center gap-2">
-            <span id="mypage-month" class="text-xs text-gray-400"></span>
+            <select id="mypage-month-select"
+              class="px-2 py-1 rounded-lg border border-gray-200 text-xs text-gray-600 outline-none focus:border-brand-500"></select>
             <button id="mypage-payslip-btn" type="button"
-              class="px-3 py-1 rounded-lg border border-brand-200 text-brand-700 text-xs font-semibold hover:bg-brand-50">
-              📄 급여명세서
+              class="px-3 py-1 rounded-lg border border-brand-200 text-brand-700 text-xs font-semibold hover:bg-brand-50 whitespace-nowrap">
+              📄 명세서
             </button>
           </div>
         </div>
-        <div class="grid grid-cols-3 gap-3">
-          <div class="bg-brand-50 rounded-xl p-4">
-            <p class="text-[11px] text-brand-600">총 급여(세전)</p>
-            <p id="mypage-gross" class="text-lg font-bold text-brand-800 mt-1">₩0</p>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="bg-brand-50 rounded-xl p-4 flex sm:block items-center justify-between">
+            <p class="text-xs sm:text-[11px] text-brand-600">총 급여(세전)</p>
+            <p id="mypage-gross" class="text-lg font-bold text-brand-800 sm:mt-1">₩0</p>
           </div>
-          <div class="bg-red-50 rounded-xl p-4">
-            <p class="text-[11px] text-red-500">공제액(3.3%)</p>
-            <p id="mypage-deduction" class="text-lg font-bold text-red-600 mt-1">-₩0</p>
+          <div class="bg-red-50 rounded-xl p-4 flex sm:block items-center justify-between">
+            <p class="text-xs sm:text-[11px] text-red-500">공제액(3.3%)</p>
+            <p id="mypage-deduction" class="text-lg font-bold text-red-600 sm:mt-1">-₩0</p>
           </div>
-          <div class="bg-emerald-50 rounded-xl p-4">
-            <p class="text-[11px] text-emerald-600">차인지급액(누적)</p>
-            <p id="mypage-net" class="text-lg font-bold text-emerald-700 mt-1">₩0</p>
+          <div class="bg-emerald-50 rounded-xl p-4 flex sm:block items-center justify-between">
+            <p class="text-xs sm:text-[11px] text-emerald-600">차인지급액</p>
+            <p id="mypage-net" class="text-lg font-bold text-emerald-700 sm:mt-1">₩0</p>
           </div>
         </div>
         <p id="mypage-net-note" class="text-xs text-gray-400 mt-2"></p>
+      </section>
+
+      <!-- 급여 건별 내역 -->
+      <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+        <h3 class="text-base font-bold text-gray-700 mb-3">💵 급여 내역 (건별)</h3>
+        <div id="mypage-payroll-list" class="text-sm text-gray-600"></div>
       </section>
 
       <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
@@ -792,6 +799,20 @@
         </form>
         <div id="mypage-dayoffs" class="space-y-1 text-sm text-gray-600"></div>
       </section>
+
+      <!-- 방문 상세 모달 -->
+      <div id="mypage-detail-modal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4"
+        onclick="if(event.target===this)closeMyDetail()">
+        <div class="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-xl p-6 max-h-[85vh] overflow-y-auto">
+          <div class="flex items-center justify-between mb-4">
+            <h3 id="mypage-detail-title" class="text-base font-bold text-gray-800">방문 상세</h3>
+            <button onclick="closeMyDetail()" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+          </div>
+          <div id="mypage-detail-body"></div>
+          <button onclick="closeMyDetail()"
+            class="mt-6 w-full py-2.5 bg-brand-700 text-white text-sm font-semibold rounded-xl hover:bg-brand-800">닫기</button>
+        </div>
+      </div>
     </main>
 
     <!-- 앱 푸터 -->

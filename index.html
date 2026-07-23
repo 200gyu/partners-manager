@@ -590,6 +590,12 @@
         </div>
       </section>
 
+      <!-- 월간 수익 추이 -->
+      <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+        <h2 class="text-base font-bold text-gray-700 mb-3">📈 월간 수익 추이</h2>
+        <div id="payroll-trend"></div>
+      </section>
+
       <!-- 급여 통계 대시보드 -->
       <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <div class="flex items-center justify-between mb-4">
@@ -719,7 +725,13 @@
       <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
         <div class="flex items-center justify-between mb-3">
           <h3 class="text-base font-bold text-gray-700">💰 당월 정산 수익</h3>
-          <span id="mypage-month" class="text-xs text-gray-400"></span>
+          <div class="flex items-center gap-2">
+            <span id="mypage-month" class="text-xs text-gray-400"></span>
+            <button id="mypage-payslip-btn" type="button"
+              class="px-3 py-1 rounded-lg border border-brand-200 text-brand-700 text-xs font-semibold hover:bg-brand-50">
+              📄 급여명세서
+            </button>
+          </div>
         </div>
         <div class="grid grid-cols-3 gap-3">
           <div class="bg-brand-50 rounded-xl p-4">
@@ -736,6 +748,23 @@
           </div>
         </div>
         <p id="mypage-net-note" class="text-xs text-gray-400 mt-2"></p>
+      </section>
+
+      <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+        <h3 class="text-base font-bold text-gray-700 mb-3">📈 월간 수익 추이</h3>
+        <div id="mypage-trend"></div>
+      </section>
+
+      <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-base font-bold text-gray-700">📅 방문 일정</h3>
+          <div class="flex items-center gap-2 text-sm">
+            <button id="mypage-cal-prev" type="button" class="px-2 py-1 rounded-lg border border-gray-200 hover:bg-gray-50">‹</button>
+            <span id="mypage-cal-title" class="font-medium text-gray-600 w-24 text-center"></span>
+            <button id="mypage-cal-next" type="button" class="px-2 py-1 rounded-lg border border-gray-200 hover:bg-gray-50">›</button>
+          </div>
+        </div>
+        <div id="mypage-calendar"></div>
       </section>
 
       <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">

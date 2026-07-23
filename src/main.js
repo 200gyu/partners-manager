@@ -1,6 +1,7 @@
 import { supabase } from './supabase.js';
 import { getSession, onAuthStateChange, signIn, signUp, signOut } from './auth.js';
 import { exportPayroll, downloadPartnerTemplate, parsePartnerFile } from './excel.js';
+import { monthlyTotals, monthlyTrendSvg, printPayslip } from './reports.js';
 
 // ─── Mock Data 모드 ───
 // 로컬 개발(vite dev)에서만 활성화. mockData.js는 실명 포함으로 gitignore 처리되어
@@ -33,8 +34,11 @@ let dayoffCalMonth = new Date().getMonth();
 let payrollRecords = [];
 let uniCalYear = new Date().getFullYear();
 let uniCalMonth = new Date().getMonth();
-let currentRole = 'admin';   // RBAC: admin | leader | partner
+let currentRole = 'admin';   // RBAC: admin | leader | partner | manager
 let currentProfile = null;   // { role, partner_id }
+let myAssignsCache = [];     // 매니저 포털 캘린더용 본인 배정 캐시
+let myCalYear = new Date().getFullYear();
+let myCalMonth = new Date().getMonth();
 
 // ─── 초기화 ───
 document.addEventListener('DOMContentLoaded', async () => {
@@ -364,6 +368,30 @@ async function renderMyPage(session) {
       : '';
   }
 
+  // 월간 수익 추이 (본인)
+  const trendEl = document.getElementById('mypage-trend');
+  if (trendEl) trendEl.innerHTML = monthlyTrendSvg(monthlyTotals(myRecords || []));
+
+  // 급여명세서 (본인) — 인쇄용
+  const payslipBtn = document.getElementById('mypage-payslip-btn');
+  if (payslipBtn) {
+    payslipBtn.onclick = () => {
+      const ok = printPayslip(buildPayslip(pid, monthStr, myRecords || [], myAssigns || [], me));
+      if (!ok) showToast('팝업이 차단되었습니다. 팝업을 허용한 뒤 다시 시도하세요.', 'error');
+    };
+  }
+
+  // 방문 일정 캘린더 (본인 배정)
+  myAssignsCache = myAssigns || [];
+  const now = new Date();
+  myCalYear = now.getFullYear();
+  myCalMonth = now.getMonth();
+  renderManagerCalendar();
+  const prev = document.getElementById('mypage-cal-prev');
+  const next = document.getElementById('mypage-cal-next');
+  if (prev) prev.onclick = () => { myCalMonth--; if (myCalMonth < 0) { myCalMonth = 11; myCalYear--; } renderManagerCalendar(); };
+  if (next) next.onclick = () => { myCalMonth++; if (myCalMonth > 11) { myCalMonth = 0; myCalYear++; } renderManagerCalendar(); };
+
   // 내 휴무
   const doEl = document.getElementById('mypage-dayoffs');
   doEl.innerHTML = (myDayoffs || []).length
@@ -385,6 +413,46 @@ async function renderMyPage(session) {
     showToast('휴무가 신청되었습니다');
     renderMyPage(session);
   };
+}
+
+// 매니저 포털: 본인 방문 일정 월간 캘린더
+function renderManagerCalendar() {
+  const grid = document.getElementById('mypage-calendar');
+  if (!grid) return;
+  const title = document.getElementById('mypage-cal-title');
+  if (title) title.textContent = `${myCalYear}년 ${myCalMonth + 1}월`;
+
+  const byDate = {};
+  (myAssignsCache || []).forEach((a) => {
+    if (!a.assignment_date) return;
+    (byDate[a.assignment_date] = byDate[a.assignment_date] || []).push(a);
+  });
+
+  const startDow = new Date(myCalYear, myCalMonth, 1).getDay();
+  const daysInMonth = new Date(myCalYear, myCalMonth + 1, 0).getDate();
+  const statusCls = {
+    '대기': 'bg-amber-50 text-amber-800 border-l-2 border-amber-400',
+    '완료': 'bg-blue-50 text-blue-800 border-l-2 border-blue-400',
+    '종료': 'bg-gray-100 text-gray-500 border-l-2 border-gray-300',
+  };
+  const dow = ['일', '월', '화', '수', '목', '금', '토'];
+
+  let html = '<div class="grid grid-cols-7 gap-px bg-gray-100 rounded-lg overflow-hidden text-xs">';
+  dow.forEach((d, i) => {
+    html += `<div class="bg-gray-50 py-1.5 text-center font-medium ${i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-gray-500'}">${d}</div>`;
+  });
+  for (let i = 0; i < startDow; i++) html += '<div class="bg-gray-50 min-h-[70px]"></div>';
+  for (let day = 1; day <= daysInMonth; day++) {
+    const ds = `${myCalYear}-${String(myCalMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const entries = (byDate[ds] || []).map((a) => {
+      const t = a.visit_time ? String(a.visit_time).slice(0, 5) + ' ' : '';
+      return `<div class="${statusCls[a.status] || 'bg-gray-50'} rounded px-1 py-0.5 mb-0.5 truncate"
+        title="${esc(t + a.client_name + ' ' + (a.client_address || ''))}">${esc(t + a.client_name)}</div>`;
+    }).join('');
+    html += `<div class="bg-white min-h-[70px] p-1"><div class="text-[10px] text-gray-400 mb-0.5">${day}</div>${entries}</div>`;
+  }
+  html += '</div>';
+  grid.innerHTML = html;
 }
 
 // ═══════════════════════════════════════
@@ -1899,6 +1967,10 @@ function renderPayrollDashboard() {
   document.getElementById('payroll-stat-workers').textContent = uniqueWorkers + '명';
   document.getElementById('payroll-stat-avg-rate').textContent = '₩' + avgRate.toLocaleString();
 
+  // 월간 수익 추이 차트 (회사 전체 — 전 기간)
+  const trendEl = document.getElementById('payroll-trend');
+  if (trendEl) trendEl.innerHTML = monthlyTrendSvg(monthlyTotals(payrollRecords));
+
   const byPartner = {};
   monthRecords.forEach(r => {
     if (!byPartner[r.partner_id]) {
@@ -1951,6 +2023,8 @@ function renderPayrollDashboard() {
           <span class="text-[11px] px-2 py-0.5 rounded-full ${ps.cls}">${ps.label}</span>
           <button onclick="togglePartnerPayment('${pid}','${selectedMonth}','${ps.target}')"
             class="ml-1 text-[11px] px-2 py-0.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">${ps.btn}</button>
+          <button onclick="printPartnerPayslip('${pid}','${selectedMonth}')" title="급여명세서"
+            class="ml-1 text-[11px] px-2 py-0.5 rounded-lg border border-brand-200 text-brand-700 hover:bg-brand-50">📄</button>
         </td>
       </tr>`;
   }).join('');
@@ -2035,4 +2109,34 @@ window.togglePartnerPayment = async function (pid, month, target) {
   showToast(`지급 상태가 '${target}'(으)로 변경되었습니다`);
   await loadPayrollRecords();
   renderPayrollDashboard();
+};
+
+// 급여명세서 데이터 구성 (records/assignments를 조인해 명세 rows 생성)
+function buildPayslip(pid, month, recordSrc, assignSrc, partnerOverride) {
+  const partner = partnerOverride || partners.find((p) => p.id === pid);
+  const recs = (recordSrc || payrollRecords)
+    .filter((r) => r.partner_id === pid && r.work_date && r.work_date.startsWith(month))
+    .sort((a, b) => (a.work_date || '').localeCompare(b.work_date || ''));
+  const asrc = assignSrc || assignments;
+  const rows = recs.map((r) => {
+    const a = asrc.find((x) => x.id === r.assignment_id);
+    return {
+      date: r.work_date, client: a ? a.client_name : '-',
+      hours: r.hours_worked, rate: r.hourly_rate,
+      role: r.bonus || 0, field: r.field_bonus || 0, gross: r.total_amount,
+    };
+  });
+  const gross = recs.reduce((s, r) => s + (Number(r.total_amount) || 0), 0);
+  const deduction = Math.round(gross * 0.033);
+  return {
+    company: '주식회사 케이제이파트너스',
+    name: partner ? partner.name : '', region: partner ? partner.region : '',
+    month, rows, gross, deduction, net: gross - deduction,
+  };
+}
+
+// 관리자: 파트너 급여명세서 인쇄
+window.printPartnerPayslip = function (pid, month) {
+  const ok = printPayslip(buildPayslip(pid, month));
+  if (!ok) showToast('팝업이 차단되었습니다. 팝업을 허용한 뒤 다시 시도하세요.', 'error');
 };

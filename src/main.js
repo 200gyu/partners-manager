@@ -252,10 +252,58 @@ function setupManagerAdmin() {
     showToast('매니저 계정이 연결되었습니다');
     document.getElementById('manager-email').value = '';
     loadManagerAccounts();
+    loadPendingAccounts();
   });
 
   loadManagerAccounts();
+  loadPendingAccounts();
 }
+
+// 승인 대기(가입했지만 미연결) 계정 목록
+async function loadPendingAccounts() {
+  const listEl = document.getElementById('pending-list');
+  const countEl = document.getElementById('pending-count');
+  if (!listEl) return;
+  if (USE_MOCK_DATA) {
+    listEl.innerHTML = '<p class="text-gray-400">데모 모드 — 운영에서 가입 승인 대기 목록이 표시됩니다.</p>';
+    return;
+  }
+  const { data, error } = await supabase.rpc('list_pending_accounts');
+  if (error) {
+    listEl.innerHTML = `<p class="text-gray-400">불러오기 실패 (${esc(error.message)}). v8 마이그레이션 실행 여부를 확인하세요.</p>`;
+    return;
+  }
+  const rows = data || [];
+  if (countEl) { countEl.textContent = rows.length; countEl.classList.toggle('hidden', rows.length === 0); }
+  const partnerOpts = '<option value="">정리수납사 선택…</option>' +
+    partners.map((p) => `<option value="${p.id}">${esc(p.name)} (${esc(p.region || '')})</option>`).join('');
+  listEl.innerHTML = rows.length
+    ? rows.map((r) => `
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2 border-b border-gray-50 py-2">
+          <div class="flex-1 min-w-0">
+            <span class="text-gray-700">📩 ${esc(r.email)}</span>
+            <span class="block text-[11px] text-gray-400">가입일 ${esc(String(r.created_at).slice(0, 10))}</span>
+          </div>
+          <select id="pending-partner-${r.uid}"
+            class="px-2 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-brand-500">${partnerOpts}</select>
+          <button onclick="approvePending('${esc(r.email)}','${r.uid}')"
+            class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 whitespace-nowrap">✅ 승인</button>
+        </div>`).join('')
+    : '<p class="text-gray-400">승인 대기 중인 가입 요청이 없습니다.</p>';
+}
+
+// 가입 승인: 정리수납사 연결 + 매니저 활성화 (link_manager 재사용)
+window.approvePending = async function (email, uid) {
+  const sel = document.getElementById('pending-partner-' + uid);
+  const partnerId = sel ? sel.value : '';
+  if (!partnerId) { showToast('연결할 정리수납사를 선택하세요', 'error'); return; }
+  const { data, error } = await supabase.rpc('link_manager', { p_email: email, p_partner_id: partnerId });
+  if (error) { showToast('승인 실패: ' + error.message, 'error'); return; }
+  if (data === 'NO_USER') { showToast('계정을 찾을 수 없습니다', 'error'); return; }
+  showToast('승인 완료 — 매니저로 활성화되었습니다');
+  loadPendingAccounts();
+  loadManagerAccounts();
+};
 
 async function loadManagerAccounts() {
   const listEl = document.getElementById('manager-list');
@@ -285,6 +333,7 @@ window.unlinkManager = async function (uid) {
   if (error) { showToast('해제 실패: ' + error.message, 'error'); return; }
   showToast('연결이 해제되었습니다');
   loadManagerAccounts();
+  loadPendingAccounts();
 };
 
 function showPartnerApp(session) {
@@ -714,6 +763,7 @@ async function loadPartners() {
   populateTeamSelect();
   populateDayOffSelect();
   populateManagerPartnerSelect();
+  if (!USE_MOCK_DATA && document.getElementById('pending-list')) loadPendingAccounts();
   updateDashboard();
 }
 

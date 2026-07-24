@@ -117,12 +117,21 @@ async function handleSignup(e) {
   const form = e.target;
   const email = form.email.value.trim();
   const password = form.password.value;
+  const passwordConfirm = form.password_confirm ? form.password_confirm.value : password;
   const errEl = document.getElementById('signup-error');
   const successEl = document.getElementById('signup-success');
   const btn = document.getElementById('btn-signup');
 
   errEl.classList.add('hidden');
   successEl.classList.add('hidden');
+
+  // 비밀번호 확인 일치 검증
+  if (password !== passwordConfirm) {
+    errEl.textContent = '비밀번호가 일치하지 않습니다. 다시 확인해 주세요.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
   btn.disabled = true;
   btn.textContent = '생성 중...';
 
